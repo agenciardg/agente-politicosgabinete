@@ -28,7 +28,7 @@ jobs:
             context: ./admin
             dockerfile: admin/Dockerfile
             build-args: |
-              NEXT_PUBLIC_API_URL=https://agentepolitico.agenciardg.com.br/api/v1
+              NEXT_PUBLIC_API_URL=http://217.79.180.230:8010/api/v1
 
     steps:
       - name: Checkout
