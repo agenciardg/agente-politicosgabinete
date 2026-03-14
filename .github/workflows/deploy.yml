@@ -65,8 +65,11 @@ jobs:
     needs: build
     steps:
       - name: Deploy via Portainer webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        if: ${{ env.WEBHOOK_URL != '' }}
         run: |
-          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}" \
+          curl -X POST "$WEBHOOK_URL" \
             --max-time 30 \
             --retry 3 \
             --retry-delay 5
