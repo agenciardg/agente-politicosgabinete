@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "squads": {
+      "source": "gutomec/ai-public-arsenal",
+      "sourceType": "github",
+      "computedHash": "7e731c166f2702babc795c6e5b4669f9d1e93671c6a7ae668e612a893a8ed8a1"
+    }
+  }
+}

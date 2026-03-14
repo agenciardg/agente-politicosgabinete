@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+.env*
+.git
+.gitignore
+.github
+admin
+venv
+.venv
+*.md
+.DS_Store
+.omc
+squads
+database/migrations

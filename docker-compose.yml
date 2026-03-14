@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (Local Development Only)
+  # For production, use dedicated PostgreSQL for checkpoints/memory
+  postgres-local:
+    image: postgres:16-alpine
+    container_name: gabinetetenant_postgres_local
+    environment:
+      POSTGRES_DB: gabinetetenant_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gabinetetenant_network
+
+  # Multi-Tenant LangGraph Agent API
+  agent-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gabinetetenant_agent_api
+    environment:
+      # Dedicated PostgreSQL (checkpoints + memory)
+      POSTGRES_HOST: postgres-local
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: gabinetetenant_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+      # Supabase (config tables)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL}
+
+      # JWT Authentication
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 30
+      JWT_REFRESH_EXPIRE_DAYS: 7
+
+      # xAI Grok API (default, overridable per tenant)
+      GROK_API_KEY: ${GROK_API_KEY}
+      GROK_MODEL: grok-4-1-fast-non-reasoning
+      GROK_BASE_URL: https://api.x.ai/v1
+
+      # Helena CRM API (default, overridable per tenant)
+      HELENA_API_TOKEN: ${HELENA_API_TOKEN}
+      HELENA_BASE_URL: https://api.helena.run
+      HELENA_BOT_NUMBER: ${HELENA_BOT_NUMBER}
+
+      # Environment
+      ENVIRONMENT: development
+      LOG_LEVEL: INFO
+      CORS_ORIGINS: "*"
+      TZ: America/Sao_Paulo
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./database:/app/database
+    networks:
+      - gabinetetenant_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  postgres_data_local:
+    driver: local
+
+networks:
+  gabinetetenant_network:
+    driver: bridge

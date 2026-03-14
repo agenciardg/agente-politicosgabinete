@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Docker
+*.log
+
+# OMC / Claude
+.omc/
+.claude/
+
+# Squads (generated)
+squads/
+
+# Node (admin has its own .gitignore)
+node_modules/

@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Backend API - Multi-Tenant LangGraph Agent
+  # ============================================================================
+  agent-api:
+    image: ghcr.io/agenciardg/agente-politicosgabinete/api:latest
+    container_name: agentepolitico_api
+    environment:
+      # Supabase (config tables)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL}
+
+      # PostgreSQL (checkpoints + memory)
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # JWT Authentication
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 30
+      JWT_REFRESH_EXPIRE_DAYS: 7
+
+      # xAI Grok API
+      GROK_API_KEY: ${GROK_API_KEY}
+      GROK_MODEL: ${GROK_MODEL:-grok-4-1-fast-non-reasoning}
+      GROK_BASE_URL: https://api.x.ai/v1
+
+      # Helena CRM
+      HELENA_API_TOKEN: ${HELENA_API_TOKEN}
+      HELENA_BASE_URL: https://api.helena.run
+      HELENA_BOT_NUMBER: ${HELENA_BOT_NUMBER}
+
+      # Environment
+      ENVIRONMENT: production
+      LOG_LEVEL: INFO
+      CORS_ORIGINS: https://agentepolitico.agenciardg.com.br,https://admin.agentepolitico.agenciardg.com.br
+      TZ: America/Sao_Paulo
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - agentepolitico_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`agentepolitico.agenciardg.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`))"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+
+  # ============================================================================
+  # Admin Panel - Next.js Frontend
+  # ============================================================================
+  admin:
+    image: ghcr.io/agenciardg/agente-politicosgabinete/admin:latest
+    container_name: agentepolitico_admin
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: 1
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - agentepolitico_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.admin.rule=Host(`agentepolitico.agenciardg.com.br`) && !PathPrefix(`/api`) && !PathPrefix(`/docs`) && !PathPrefix(`/openapi.json`)"
+      - "traefik.http.routers.admin.entrypoints=websecure"
+      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.admin.loadbalancer.server.port=3000"
+
+  # ============================================================================
+  # Traefik Reverse Proxy (HTTPS + Routing)
+  # ============================================================================
+  traefik:
+    image: traefik:v3.3
+    container_name: agentepolitico_traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-contato@agenciardg.com.br}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    restart: unless-stopped
+    networks:
+      - agentepolitico_network
+
+networks:
+  agentepolitico_network:
+    driver: bridge
+
+volumes:
+  traefik_letsencrypt:
+    driver: local

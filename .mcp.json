@@ -1,0 +1,130 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+      }
+    },
+    "commands": {
+      "command": "npx",
+      "args": [
+        "mcp-server-commands"
+      ]
+    },
+    "instagram-analytics": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@apify/actors-mcp-server"
+      ],
+      "env": {
+        "APIFY_TOKEN": "apify_api_isc44E52fCVO4CHeFQ7DpCnMOQvNwQ4uHJfO"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "rdg": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "google-maps-mcp-server"
+      ],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "AIzaSyB9Ya4barQiGfgqZsdi9KrxTPpdGidzFsY"
+      }
+    },
+    "supabase-rdg": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_7faded9af0b93566b587d842d348d5a32dc071d3",
+        "--project-ref",
+        "kfhenndnrbbvlwengrtw"
+      ]
+    },
+    "supabase-andresantos": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_7faded9af0b93566b587d842d348d5a32dc071d3",
+        "--project-ref",
+        "arzoiwlinsswslhokwxk"
+      ]
+    },
+    "Bright Data": {
+      "command": "npx",
+      "args": [
+        "@brightdata/mcp"
+      ],
+      "env": {
+        "API_TOKEN": "4c4051538782980cf507aa3a163cecbd2ee7167d21e3c8a21a0e5a359d741ace"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ]
+    },
+    "executeautomation-playwright-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@executeautomation/playwright-mcp-server"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/allowed/files"
+      ]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "postgres": {
+      "command": "/Users/renancustodio/.local/bin/uvx",
+      "args": [
+        "postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://postgres:5d3dd65370a0efcd1004c570d4d8de27@217.79.180.230:5432/postgres"
+      }
+    }
+  }
+}
