@@ -153,6 +153,7 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
         name: agent.name,
         persona_prompt: agent.persona_prompt,
         behavior_prompt: agent.behavior_prompt,
+        initial_message: agent.initial_message,
       })
       setAgent(updated)
       toast.success('Agente salvo com sucesso!')
@@ -411,6 +412,19 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
               value={agent.behavior_prompt || ''}
               onChange={(e) => setAgent({ ...agent, behavior_prompt: e.target.value })}
               placeholder="Descreva o comportamento do agente..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="initial-message">Mensagem Inicial (Boas-vindas)</Label>
+            <p className="text-xs text-muted-foreground">
+              Mensagem fixa enviada automaticamente na primeira interacao do contato. Deixe vazio para usar o agente IA desde o inicio.
+            </p>
+            <Textarea
+              id="initial-message"
+              rows={4}
+              value={agent.initial_message || ''}
+              onChange={(e) => setAgent({ ...agent, initial_message: e.target.value })}
+              placeholder="Ex: Ola! Sou a assistente do Deputado Fulano. Como posso ajudar?"
             />
           </div>
           <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700" disabled={saving}>

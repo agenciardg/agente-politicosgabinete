@@ -25,6 +25,7 @@ class AgentUpdate(BaseModel):
     name: Optional[str] = None
     persona_prompt: Optional[str] = None
     behavior_prompt: Optional[str] = None
+    initial_message: Optional[str] = None
     active: Optional[bool] = None
 
 
@@ -37,6 +38,7 @@ class AgentResponse(BaseModel):
     name: str
     persona_prompt: Optional[str] = None
     behavior_prompt: Optional[str] = None
+    initial_message: Optional[str] = None
     active: Optional[bool] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None

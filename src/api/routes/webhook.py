@@ -19,7 +19,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from src.models.webhook import WebhookRequest, WebhookResponse
 from src.services.helena_client import HelenaClient
 from src.agent.config_loader import TenantConfigLoader
-from src.agent.graph import get_agent_graph
+from src.agent.graph import get_agent_graph, has_existing_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -132,14 +132,78 @@ async def process_whatsapp_message(
                 f"panels={len(active_panels)}, fields={len(active_fields)}"
             )
 
-            # 2. Get agent graph (singleton, tenant-agnostic structure)
+            checkpoint_ns = f"tenant_{tenant_slug}"
+
+            # 2. Check for initial message (new conversation without history)
+            initial_message = agent_config.get("initial_message", "").strip()
+            if initial_message:
+                has_history = await has_existing_checkpoint(
+                    thread_id=session_id,
+                    checkpoint_ns=checkpoint_ns,
+                )
+                if not has_history:
+                    logger.info(
+                        f"New conversation for tenant={tenant_slug}, "
+                        f"sending initial message"
+                    )
+                    # Send fixed initial message directly via Helena
+                    already_sent = False
+                    helena_token = tenant_config.get("helena_api_token", "")
+                    if helena_token:
+                        try:
+                            helena_client = HelenaClient(
+                                api_token=helena_token,
+                                base_url=tenant_config.get(
+                                    "helena_base_url", "https://api.helena.run"
+                                ),
+                            )
+                            try:
+                                await helena_client.send_message(
+                                    session_id=session_id,
+                                    message=initial_message,
+                                    to=request.numero,
+                                )
+                                already_sent = True
+                                logger.info(
+                                    f"Initial message sent to Helena for "
+                                    f"session {session_id}"
+                                )
+                            finally:
+                                await helena_client.close()
+                        except Exception as e:
+                            logger.error(
+                                f"Error sending initial message: {e}",
+                                exc_info=True,
+                            )
+
+                    _recent_messages[dedup_key] = time.time()
+
+                    return WebhookResponse(
+                        success=True,
+                        message=initial_message,
+                        session_id=session_id,
+                        current_phase="INITIAL",
+                        data_collected=False,
+                        category=None,
+                        transferred=False,
+                        already_sent=already_sent,
+                        error=None,
+                        metadata={
+                            "tenant_slug": tenant_slug,
+                            "tenant_id": tenant_id,
+                            "agent_type": agent_type,
+                            "initial_message": True,
+                        },
+                    )
+
+            # 3. Get agent graph (singleton, tenant-agnostic structure)
             graph = await get_agent_graph()
 
-            # 3. Invoke agent with tenant state
+            # 4. Invoke agent with tenant state
             config = {
                 "configurable": {
                     "thread_id": session_id,
-                    "checkpoint_ns": f"tenant_{tenant_slug}",
+                    "checkpoint_ns": checkpoint_ns,
                 }
             }
             input_state = {

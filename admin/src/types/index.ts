@@ -30,6 +30,7 @@ export interface Agent {
   name: string
   persona_prompt?: string
   behavior_prompt?: string
+  initial_message?: string
   active?: boolean
 }
 

@@ -154,3 +154,11 @@ async def get_agent_graph():
     if _agent_graph is None:
         _agent_graph = await create_agent_graph()
     return _agent_graph
+
+
+async def has_existing_checkpoint(thread_id: str, checkpoint_ns: str) -> bool:
+    """Check if a conversation thread has any existing checkpoint (prior history)."""
+    checkpointer = await _get_checkpointer()
+    config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": checkpoint_ns}}
+    checkpoint = await checkpointer.aget_tuple(config)
+    return checkpoint is not None
