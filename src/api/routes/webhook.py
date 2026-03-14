@@ -187,6 +187,7 @@ async def process_whatsapp_message(
                             await helena_client.send_message(
                                 session_id=session_id,
                                 message=response_message,
+                                to=request.numero,
                             )
                             already_sent = True
                             logger.info(

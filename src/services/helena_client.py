@@ -407,18 +407,20 @@ class HelenaClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception(_is_retryable_http_error),
     )
-    async def send_message(self, session_id: str, message: str) -> Dict[str, Any]:
+    async def send_message(self, session_id: str, message: str, to: str = "") -> Dict[str, Any]:
         """
         Envia mensagem de texto numa sessao de chat.
 
         Args:
             session_id: UUID da sessao.
             message: Texto da mensagem.
+            to: Numero do destinatario (obrigatorio pela API Helena).
         """
         endpoint = HELENA_ENDPOINTS["send_message"]
 
         payload = {
             "sessionId": session_id,
+            "to": to,
             "body": {
                 "text": message,
             },
