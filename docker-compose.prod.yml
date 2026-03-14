@@ -38,7 +38,7 @@ services:
       # Environment
       ENVIRONMENT: production
       LOG_LEVEL: INFO
-      CORS_ORIGINS: https://agentepolitico.agenciardg.com.br,https://admin.agentepolitico.agenciardg.com.br
+      CORS_ORIGINS: https://agentepolitico.agenciardg.com.br,https://admin.agentepolitico.agenciardg.com.br,http://217.79.180.230:3010
       TZ: America/Sao_Paulo
     ports:
       - "8010:8000"

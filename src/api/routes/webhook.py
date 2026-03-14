@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Simple text-level dedup: block identical text from the same session within 120s.
+# Simple text-level dedup: block identical text from the same session within 30s.
 _recent_messages: dict[tuple[str, str], float] = {}
-_DEDUP_WINDOW = 120  # seconds
+_DEDUP_WINDOW = 30  # seconds
 
 # Per-session lock: prevents concurrent processing of the same session.
 _session_locks: dict[str, asyncio.Lock] = {}
@@ -85,8 +85,6 @@ async def process_whatsapp_message(
                 error=None,
                 metadata={"dedup": True},
             )
-
-        _recent_messages[dedup_key] = now
 
         # --- Per-session lock ---
         session_lock = await _get_session_lock(session_id)
@@ -206,7 +204,10 @@ async def process_whatsapp_message(
                         f"Error sending message to Helena: {e}", exc_info=True
                     )
 
-            # 6. Build response
+            # 6. Record dedup AFTER successful processing
+            _recent_messages[dedup_key] = time.time()
+
+            # 7. Build response
             return WebhookResponse(
                 success=True,
                 message=response_message,
