@@ -629,7 +629,7 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
                                   <TableHead className="w-12">Ativo</TableHead>
                                   <TableHead className="w-36">Tipo</TableHead>
                                   <TableHead>Campo</TableHead>
-                                  <TableHead>Instrucao de preenchimento</TableHead>
+                                  <TableHead>Instrucao de coleta</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -683,15 +683,23 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
                                         {cf.helena_field_name}
                                       </TableCell>
                                       <TableCell>
-                                        <Input
-                                          key={`${cf.id}-${mapping?.storage_instruction || ''}`}
-                                          placeholder="Ex: Extrair o assunto da demanda do cidadao..."
-                                          defaultValue={mapping?.storage_instruction || ''}
-                                          disabled={!isActive}
-                                          onBlur={(e) =>
-                                            handleFieldMappingSave(ap.id, cf.id, e.target.value, isActive)
-                                          }
-                                        />
+                                        {(mapping?.fill_type || 'auto') === 'collect' ? (
+                                          <Input
+                                            key={`${cf.id}-${mapping?.storage_instruction || ''}`}
+                                            placeholder="Ex: Solicite o numero do protocolo..."
+                                            defaultValue={mapping?.storage_instruction || ''}
+                                            disabled={!isActive}
+                                            onBlur={(e) =>
+                                              handleFieldMappingSave(ap.id, cf.id, e.target.value, isActive)
+                                            }
+                                          />
+                                        ) : (
+                                          <span className="text-sm text-muted-foreground">
+                                            {(mapping?.fill_type || 'auto') === 'contact'
+                                              ? 'Preenchido do cadastro do contato'
+                                              : 'Preenchido automaticamente'}
+                                          </span>
+                                        )}
                                       </TableCell>
                                     </TableRow>
                                   )
