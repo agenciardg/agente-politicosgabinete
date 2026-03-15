@@ -169,16 +169,29 @@ class HelenaSyncService:
                     on_conflict="tenant_panel_id,helena_field_id"
                 ).execute()
 
-        # Mark orphaned panels
+        # DELETE panels that no longer exist in Helena
         if synced_helena_ids:
             existing = supabase.table(PANELS_TABLE).select("id,helena_panel_id").eq(
                 "tenant_id", tenant_id
             ).execute()
             for row in existing.data:
                 if row["helena_panel_id"] not in synced_helena_ids:
-                    supabase.table(PANELS_TABLE).update(
-                        {"sync_status": "orphaned"}
-                    ).eq("id", str(row["id"])).execute()
+                    orphan_id = str(row["id"])
+                    # Delete steps and custom fields for this panel
+                    supabase.table(CUSTOM_FIELDS_TABLE).delete().eq(
+                        "tenant_panel_id", orphan_id
+                    ).execute()
+                    supabase.table(STEPS_TABLE).delete().eq(
+                        "tenant_panel_id", orphan_id
+                    ).execute()
+                    # Delete the panel itself
+                    supabase.table(PANELS_TABLE).delete().eq(
+                        "id", orphan_id
+                    ).execute()
+                    logger.info(
+                        "Deleted orphaned panel %s (helena_id=%s) for tenant %s",
+                        orphan_id, row["helena_panel_id"], tenant_id,
+                    )
 
         return len(synced_helena_ids)
 
@@ -212,6 +225,10 @@ class HelenaSyncService:
         return count
 
     async def sync_contact_fields(self, tenant_id: str, client: HelenaClient) -> int:
+        """Sync contact custom fields from Helena CRM.
+
+        Deletes fields that no longer exist in Helena (and their agent configs).
+        """
         fields = await client.get_contact_custom_fields()
         if not fields:
             logger.warning("Helena returned 0 contact fields for tenant %s", tenant_id)
@@ -240,15 +257,26 @@ class HelenaSyncService:
                 on_conflict="tenant_id,helena_field_key"
             ).execute()
 
-        # Mark orphaned fields
+        # DELETE fields that no longer exist in Helena
         if synced_keys:
             existing = supabase.table(CONTACT_FIELDS_TABLE).select(
                 "id,helena_field_key"
             ).eq("tenant_id", tenant_id).execute()
+
             for row in existing.data:
                 if row["helena_field_key"] not in synced_keys:
-                    supabase.table(CONTACT_FIELDS_TABLE).update(
-                        {"sync_status": "orphaned"}
-                    ).eq("id", str(row["id"])).execute()
+                    orphan_id = str(row["id"])
+                    # First delete agent field configs referencing this field
+                    supabase.table(
+                        "agentpolitico_tenant_agent_contact_fields"
+                    ).delete().eq("contact_field_id", orphan_id).execute()
+                    # Then delete the field itself
+                    supabase.table(CONTACT_FIELDS_TABLE).delete().eq(
+                        "id", orphan_id
+                    ).execute()
+                    logger.info(
+                        "Deleted orphaned contact field %s (key=%s) for tenant %s",
+                        orphan_id, row["helena_field_key"], tenant_id,
+                    )
 
         return len(synced_keys)
