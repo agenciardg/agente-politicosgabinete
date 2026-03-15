@@ -31,6 +31,7 @@ class AgentPanelConfigure(BaseModel):
     step_id: Optional[str] = Field(None, description="Helena step UUID")
     department_id: Optional[str] = Field(None, description="Helena department UUID")
     active: Optional[bool] = Field(default=True)
+    pre_transfer_requirements: Optional[str] = Field(None, description="Requirements to collect before transfer")
 
 
 class AgentPanelUpdate(BaseModel):
@@ -40,6 +41,7 @@ class AgentPanelUpdate(BaseModel):
     step_id: Optional[str] = None
     department_id: Optional[str] = None
     active: Optional[bool] = None
+    pre_transfer_requirements: Optional[str] = Field(None, description="Requirements to collect before transfer")
 
 
 class AgentPanelResponse(BaseModel):
@@ -52,6 +54,7 @@ class AgentPanelResponse(BaseModel):
     step_id: Optional[str] = None
     department_id: Optional[str] = None
     active: Optional[bool] = None
+    pre_transfer_requirements: Optional[str] = None
     field_mappings: Optional[List[dict]] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -66,6 +69,7 @@ class FieldMappingUpsert(BaseModel):
     panel_custom_field_id: str = Field(..., description="Panel custom field UUID")
     storage_instruction: str = Field(..., description="Storage instruction for the field")
     active: Optional[bool] = Field(default=True)
+    fill_type: Optional[str] = Field(default="auto", description="How to fill: auto, contact, collect")
 
 
 class FieldMappingResponse(BaseModel):
@@ -76,6 +80,7 @@ class FieldMappingResponse(BaseModel):
     panel_custom_field_id: str
     storage_instruction: str
     active: Optional[bool] = True
+    fill_type: Optional[str] = Field(default="auto", description="How to fill: auto, contact, collect")
     created_at: Optional[str] = None
 
     class Config:

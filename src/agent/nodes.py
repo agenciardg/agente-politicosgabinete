@@ -24,6 +24,7 @@ from src.agent.prompts import (
     get_system_prompt,
     build_etapa1_context,
     build_etapa2_context,
+    build_etapa25_context,
     format_classification_prompt,
     build_transfer_farewell_prompt,
 )
@@ -681,6 +682,17 @@ async def agent_node(state: AgentState) -> Dict[str, Any]:
         )
         context_parts.append(etapa2_block)
 
+    elif current_phase == "ETAPA_2_5":
+        # Pre-transfer collection phase
+        etapa25_block = build_etapa25_context(
+            contact_name=contact_name,
+            classification=state.get("classification") or {},
+            active_panels=active_panels or [],
+            contact_data=state.get("contact_data") or {},
+        )
+        if etapa25_block:
+            context_parts.append(etapa25_block)
+
     # Append dynamic context to system prompt
     if context_parts:
         dynamic_context = "\n".join(context_parts)
@@ -827,6 +839,30 @@ async def post_process_node(state: AgentState) -> Dict[str, Any]:
         message_modified = True
 
     # ====================================================
+    # MARKER 4: [COLETA_PRE_TRANSFER] (ETAPA 2.5)
+    # ====================================================
+    coleta_pattern = r"\[COLETA_PRE_TRANSFER\]\s*(\{[^}]+\})\s*(?:\[/?COLETA_PRE_TRANSFER\])?"
+    coleta_match = re.search(coleta_pattern, content, re.DOTALL)
+
+    if coleta_match:
+        logger.info(f"COLETA_PRE_TRANSFER marker detected for {state.get('phone_number')}")
+        try:
+            json_str = coleta_match.group(1).strip()
+            pre_transfer_data = json.loads(json_str)
+            updates["pre_transfer_data"] = pre_transfer_data
+            updates["pre_transfer_collected"] = True
+            updates["current_phase"] = "ETAPA_3"
+            logger.info(f"Pre-transfer data collected: {list(pre_transfer_data.keys())}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error in COLETA_PRE_TRANSFER: {e}")
+
+        content = re.sub(
+            r"\[COLETA_PRE_TRANSFER\]\s*\{[^}]+\}\s*(?:\[/?COLETA_PRE_TRANSFER\])?",
+            "", content, flags=re.DOTALL
+        ).strip()
+        message_modified = True
+
+    # ====================================================
     # INSISTENCE COUNTER
     # ====================================================
     insistence_phrase = "esses dados ajudam a agilizar o atendimento"
@@ -843,7 +879,7 @@ async def post_process_node(state: AgentState) -> Dict[str, Any]:
     # ====================================================
     # FINAL SANITIZATION -- catch-all for leaked markers
     # ====================================================
-    for marker in ["DADOS_CONFIRMADOS", "CLASSIFICAR_DEMANDA", "RECUSA_DADOS"]:
+    for marker in ["DADOS_CONFIRMADOS", "CLASSIFICAR_DEMANDA", "RECUSA_DADOS", "COLETA_PRE_TRANSFER"]:
         if marker in content:
             content = re.sub(
                 rf"[\[*]*{marker}[\]*]*\s*(?:\{{[^}}]*\}})?\s*(?:[\[*]*/?\s*{marker}[\]*]*)?",
@@ -959,6 +995,40 @@ async def classify_demand_node(state: AgentState) -> Dict[str, Any]:
             "error": str(e),
         }
 
+    # Check if the classified panel needs pre-transfer collection
+    classified_equipe = classification.get("equipe", "atendimento_geral")
+    active_panels = state.get("active_panels") or []
+    target_panel = None
+    for panel in active_panels:
+        if panel.get("panel_name", "") == classified_equipe:
+            target_panel = panel
+            break
+
+    needs_collection = False
+    if target_panel:
+        # Check pre_transfer_requirements
+        if target_panel.get("pre_transfer_requirements"):
+            needs_collection = True
+        # Check field mappings for fill_type="collect"
+        if not needs_collection:
+            for fm in target_panel.get("field_mappings", []):
+                if fm.get("fill_type") == "collect" and fm.get("active", True):
+                    needs_collection = True
+                    break
+
+    if needs_collection:
+        logger.info(
+            f"Pre-transfer collection needed for panel '{classified_equipe}' "
+            f"(phone={state.get('phone_number')})"
+        )
+        return {
+            "classification": classification,
+            "category": classification.get("equipe", "atendimento_geral"),
+            "urgency": classification.get("urgencia", "media"),
+            "demand_classified": True,
+            "current_phase": "ETAPA_2_5",
+        }
+
     return {
         "classification": classification,
         "category": classification.get("equipe", "atendimento_geral"),
@@ -966,6 +1036,18 @@ async def classify_demand_node(state: AgentState) -> Dict[str, Any]:
         "demand_classified": True,
         "current_phase": "ETAPA_3",
     }
+
+
+# =====================================================
+# ROUTER: CLASSIFY (ETAPA 2 -> 2.5 or 3)
+# =====================================================
+
+def classify_router(state: AgentState) -> Literal["collect", "transfer"]:
+    """Router after classify: check if pre-transfer collection is needed."""
+    if state.get("current_phase") == "ETAPA_2_5":
+        logger.info("Classify router: pre-transfer collection needed -> collect (END)")
+        return "collect"
+    return "transfer"
 
 
 # =====================================================
@@ -1055,18 +1137,34 @@ async def transfer_node(state: AgentState) -> Dict[str, Any]:
             # 5. Build custom fields data from field mappings
             custom_fields_data = {}
             cf = contact_data.get("customFields", {})
+            pre_transfer_data = state.get("pre_transfer_data") or {}
 
             # Map from tenant's field_mappings config
             field_mappings = panel_config.get("field_mappings", [])
             for mapping in field_mappings:
                 helena_field_name = mapping.get("helena_field_name", "")
                 storage_instruction = mapping.get("storage_instruction", "")
+                fill_type = mapping.get("fill_type", "auto")
+
                 if helena_field_name in panel_field_mapping:
                     field_key = panel_field_mapping[helena_field_name]
-                    value = _resolve_field_value(
-                        storage_instruction, helena_field_name,
-                        classification, contact_data, cf
-                    )
+
+                    if fill_type == "collect":
+                        # Use data collected from citizen in ETAPA 2.5
+                        value = pre_transfer_data.get(helena_field_name, "")
+                    elif fill_type == "contact":
+                        # Pull from contact data
+                        value = _resolve_field_value(
+                            storage_instruction, helena_field_name,
+                            classification, contact_data, cf
+                        )
+                    else:
+                        # Auto: use existing logic
+                        value = _resolve_field_value(
+                            storage_instruction, helena_field_name,
+                            classification, contact_data, cf
+                        )
+
                     if value:
                         custom_fields_data[field_key] = value
 
@@ -1091,6 +1189,22 @@ async def transfer_node(state: AgentState) -> Dict[str, Any]:
                 for field_name, field_value in standard_map.items():
                     if field_name in panel_field_mapping and field_value:
                         custom_fields_data[panel_field_mapping[field_name]] = field_value
+
+            # 5.1 Add pre-transfer collected data to card description
+            if pre_transfer_data:
+                mapped_field_names = {
+                    fm.get("helena_field_name")
+                    for fm in field_mappings
+                    if fm.get("helena_field_name")
+                }
+                extra_info_parts = []
+                for key, val in pre_transfer_data.items():
+                    if val and key not in mapped_field_names:
+                        extra_info_parts.append(f"{key}: {val}")
+                if extra_info_parts:
+                    desc = classification.get("descricao", "")
+                    extra = "\n".join(extra_info_parts)
+                    classification["descricao"] = f"{desc}\n\nInformacoes adicionais:\n{extra}"
 
             # 6. Calculate due date (24 hours)
             tz = pytz.timezone(tenant_config.get("timezone", "America/Sao_Paulo"))
@@ -1243,6 +1357,10 @@ def router_node(state: AgentState) -> Literal["agent", "classify", "transfer", "
         return "agent"
     elif current_phase == "ETAPA_2":
         if state.get("demand_classified"):
+            return "transfer"
+        return "agent"
+    elif current_phase == "ETAPA_2_5":
+        if state.get("pre_transfer_collected"):
             return "transfer"
         return "agent"
     elif current_phase == "ETAPA_3":

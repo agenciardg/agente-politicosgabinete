@@ -225,6 +225,7 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
     try {
       const updated = await api.put<AgentPanel>(`/panels/agent-panel/${ap.id}?tenant_id=${tenantId}`, {
         agent_description: ap.agent_description || '',
+        pre_transfer_requirements: ap.pre_transfer_requirements || '',
         step_id: ap.step_id || undefined,
         department_id: ap.department_id || undefined,
       })
@@ -237,12 +238,13 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
     }
   }
 
-  async function handleFieldMappingSave(agentPanelId: string, panelCustomFieldId: string, instruction: string, active: boolean = true) {
+  async function handleFieldMappingSave(agentPanelId: string, panelCustomFieldId: string, instruction: string, active: boolean = true, fillType?: 'auto' | 'contact' | 'collect') {
     try {
       await api.put(`/panels/${agentPanelId}/field-mappings?tenant_id=${tenantId}`, {
         panel_custom_field_id: panelCustomFieldId,
         storage_instruction: instruction,
         active,
+        ...(fillType !== undefined && { fill_type: fillType }),
       })
       toast.success(active ? 'Mapeamento salvo!' : 'Campo desativado!')
       // Reload agent panels to get updated field_mappings
@@ -514,6 +516,23 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
                             placeholder="Descreva quando usar este painel..."
                           />
                         </div>
+                        <div className="space-y-2">
+                          <Label>Requisitos pre-transferencia (opcional)</Label>
+                          <Textarea
+                            rows={2}
+                            value={ap.pre_transfer_requirements || ''}
+                            onChange={(e) =>
+                              setAgentPanels((prev) =>
+                                prev.map((p) =>
+                                  p.id === ap.id
+                                    ? { ...p, pre_transfer_requirements: e.target.value }
+                                    : p
+                                )
+                              )
+                            }
+                            placeholder="Ex: Solicite a RA do aluno. Peca foto do documento..."
+                          />
+                        </div>
                         <div className="grid gap-4 md:grid-cols-2">
                           {panel.steps && panel.steps.length > 0 ? (
                             <div className="space-y-2">
@@ -608,6 +627,7 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead className="w-12">Ativo</TableHead>
+                                  <TableHead className="w-36">Tipo</TableHead>
                                   <TableHead>Campo</TableHead>
                                   <TableHead>Instrucao de preenchimento</TableHead>
                                 </TableRow>
@@ -632,6 +652,32 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
                                             )
                                           }
                                         />
+                                      </TableCell>
+                                      <TableCell>
+                                        <Select
+                                          value={mapping?.fill_type || 'auto'}
+                                          onValueChange={(val) => {
+                                            if (val) {
+                                              handleFieldMappingSave(
+                                                ap.id,
+                                                cf.id,
+                                                mapping?.storage_instruction || '',
+                                                isActive,
+                                                val as 'auto' | 'contact' | 'collect'
+                                              )
+                                            }
+                                          }}
+                                          disabled={!isActive}
+                                        >
+                                          <SelectTrigger className="w-32">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="auto">Automatico</SelectItem>
+                                            <SelectItem value="contact">Do contato</SelectItem>
+                                            <SelectItem value="collect">Solicitar</SelectItem>
+                                          </SelectContent>
+                                        </Select>
                                       </TableCell>
                                       <TableCell className="font-medium whitespace-nowrap">
                                         {cf.helena_field_name}

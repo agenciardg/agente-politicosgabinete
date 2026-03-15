@@ -72,6 +72,7 @@ export interface AgentPanel {
   agent_id: string
   tenant_panel_id: string
   agent_description?: string
+  pre_transfer_requirements?: string
   step_id?: string
   department_id?: string
   active?: boolean
@@ -83,6 +84,7 @@ export interface FieldMapping {
   agent_panel_id: string
   panel_custom_field_id: string
   storage_instruction: string
+  fill_type?: 'auto' | 'contact' | 'collect'
   active?: boolean
 }
 

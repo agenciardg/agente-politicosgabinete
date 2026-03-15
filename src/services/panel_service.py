@@ -138,7 +138,8 @@ class PanelService:
         return self._normalize(resp.data[0])
 
     async def upsert_field_mapping(
-        self, agent_panel_id: str, panel_custom_field_id: str, storage_instruction: str, active: bool = True
+        self, agent_panel_id: str, panel_custom_field_id: str,
+        storage_instruction: str, active: bool = True, fill_type: str = "auto"
     ) -> Dict[str, Any]:
         """Upsert a field mapping for an agent panel."""
         supabase = get_supabase_client()
@@ -148,6 +149,7 @@ class PanelService:
             "panel_custom_field_id": panel_custom_field_id,
             "storage_instruction": storage_instruction,
             "active": active,
+            "fill_type": fill_type,
         }
 
         resp = supabase.table(self.FIELD_MAPPINGS_TABLE).upsert(

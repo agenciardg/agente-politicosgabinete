@@ -81,6 +81,7 @@ class TenantConfigLoader:
             joined_panel = panel.pop("agentpolitico_tenant_panels", None) or {}
             panel["helena_panel_id"] = joined_panel.get("helena_panel_id")
             panel["panel_name"] = joined_panel.get("panel_name")
+            panel["pre_transfer_requirements"] = row.get("pre_transfer_requirements")
 
             _str_id(panel, ["id", "agent_id", "tenant_panel_id"])
 

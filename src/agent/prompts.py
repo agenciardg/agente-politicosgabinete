@@ -751,6 +751,109 @@ Retorne APENAS o JSON de classificacao:"""
 
 
 # =====================================================
+# ETAPA 2.5 CONTEXT: PRE-TRANSFER DATA COLLECTION
+# =====================================================
+
+def build_etapa25_context(
+    contact_name: str,
+    classification: dict,
+    active_panels: Optional[list] = None,
+    contact_data: Optional[dict] = None,
+) -> str:
+    """Build context for ETAPA 2.5 (pre-transfer data collection)."""
+    _nome = contact_name or "cidadao"
+    equipe = classification.get("equipe", "")
+
+    # Find the target panel
+    target_panel = None
+    if active_panels:
+        for panel in active_panels:
+            if panel.get("panel_name", "") == equipe:
+                target_panel = panel
+                break
+
+    if not target_panel:
+        return ""
+
+    # Build list of fields to collect
+    collect_fields = []
+    for fm in target_panel.get("field_mappings", []):
+        if fm.get("fill_type") == "collect" and fm.get("active", True):
+            name = fm.get("helena_field_name", "")
+            instruction = fm.get("storage_instruction", "")
+            if name:
+                collect_fields.append({"name": name, "instruction": instruction})
+
+    # Get pre-transfer requirements
+    pre_requirements = target_panel.get("pre_transfer_requirements", "")
+
+    # Build collection instructions
+    fields_text = ""
+    if collect_fields:
+        lines = []
+        for f in collect_fields:
+            if f["instruction"]:
+                lines.append(f"- **{f['name']}**: {f['instruction']}")
+            else:
+                lines.append(f"- **{f['name']}**")
+        fields_text = "\n".join(lines)
+
+    requirements_text = ""
+    if pre_requirements:
+        requirements_text = f"""
+### Requisitos especiais
+
+{pre_requirements}
+"""
+
+    # Build JSON template
+    json_fields = []
+    for f in collect_fields:
+        safe_key = f["name"]
+        json_fields.append(f'"{safe_key}":"valor"')
+    if pre_requirements:
+        json_fields.append('"requisitos_extras":"informacoes coletadas"')
+    json_example = "{" + ",".join(json_fields) + "}" if json_fields else "{}"
+
+    return f"""## FASE ATUAL: ETAPA 2.5 -- Coleta pre-transferencia
+
+A demanda do cidadao *{_nome}* foi identificada. Antes de encaminhar para a equipe responsavel, voce precisa coletar algumas informacoes adicionais.
+
+---
+
+### PROIBICOES ABSOLUTAS
+
+1. PROIBIDO mencionar o nome da equipe ou painel interno ao cidadao.
+2. PROIBIDO dizer "estou coletando dados para o card" ou qualquer referencia interna.
+3. PROIBIDO pular campos -- colete CADA informacao individualmente.
+
+---
+
+{f"### Campos a coletar{chr(10)}{chr(10)}{fields_text}" if fields_text else ""}
+{requirements_text}
+
+### Instrucoes
+
+1. Explique de forma natural que precisa de mais algumas informacoes para encaminhar corretamente.
+2. Colete cada campo um por vez, de forma conversacional.
+3. Apos coletar TUDO, inclua o marcador [COLETA_PRE_TRANSFER] com os dados.
+
+---
+
+### Marcador [COLETA_PRE_TRANSFER]
+
+Apos coletar todas as informacoes necessarias:
+
+[COLETA_PRE_TRANSFER]{json_example}[/COLETA_PRE_TRANSFER]
+
+REGRAS:
+- Inclua o marcador SOMENTE apos ter todas as informacoes.
+- O marcador e INVISIVEL para o cidadao.
+- Se o cidadao nao souber uma informacao, coloque "Nao informado".
+"""
+
+
+# =====================================================
 # FAREWELL PROMPT (post-transfer)
 # =====================================================
 

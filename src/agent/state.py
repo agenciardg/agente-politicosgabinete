@@ -75,7 +75,7 @@ class AgentState(TypedDict):
     # PHASES - Flow Control
     # ==========================================
 
-    current_phase: Literal["ETAPA_1", "ETAPA_2", "ETAPA_3", "COMPLETED"]
+    current_phase: Literal["ETAPA_1", "ETAPA_2", "ETAPA_2_5", "ETAPA_3", "COMPLETED"]
     """Current phase of the conversation"""
 
     should_continue: bool
@@ -139,6 +139,16 @@ class AgentState(TypedDict):
 
     urgency: Optional[Literal["baixa", "media", "alta"]]
     """Demand urgency level"""
+
+    # ==========================================
+    # ETAPA 2.5 - Pre-Transfer Collection
+    # ==========================================
+
+    pre_transfer_data: Optional[dict]
+    """Data collected during pre-transfer phase"""
+
+    pre_transfer_collected: Optional[bool]
+    """Flag: pre-transfer requirements satisfied"""
 
     # ==========================================
     # ETAPA 3 - Transfer
@@ -233,6 +243,9 @@ def create_initial_state(
         category=None,
         classification=None,
         urgency=None,
+        # ETAPA 2.5
+        pre_transfer_data=None,
+        pre_transfer_collected=False,
         # ETAPA 3
         transferred_to_department=None,
         new_card_id=None,

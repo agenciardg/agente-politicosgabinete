@@ -115,7 +115,9 @@ async def upsert_field_mapping(
     """Upsert a field mapping for an agent panel."""
     service = PanelService()
     return await service.upsert_field_mapping(
-        agent_panel_id, data.panel_custom_field_id, data.storage_instruction, data.active if data.active is not None else True
+        agent_panel_id, data.panel_custom_field_id, data.storage_instruction,
+        data.active if data.active is not None else True,
+        data.fill_type or "auto"
     )
 
 

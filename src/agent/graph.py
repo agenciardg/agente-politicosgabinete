@@ -18,6 +18,7 @@ from src.agent.nodes import (
     post_process_node,
     post_process_router,
     classify_demand_node,
+    classify_router,
     transfer_node,
     router_node,
     should_continue_node,
@@ -89,8 +90,11 @@ async def create_agent_graph() -> StateGraph:
     START -> validate -> router_node (conditional)
 
     Router decides:
-    - ETAPA_1/ETAPA_2 -> agent -> post_process -> post_process_router
-        - If [CLASSIFICAR_DEMANDA] -> classify -> transfer -> END
+    - ETAPA_1/ETAPA_2/ETAPA_2_5 -> agent -> post_process -> post_process_router
+        - If [CLASSIFICAR_DEMANDA] -> classify -> classify_router
+            - If pre-transfer collection needed -> END (ETAPA_2_5, await next message)
+            - Otherwise -> transfer -> END
+        - If [COLETA_PRE_TRANSFER] -> END (ETAPA_3, next invocation routes to transfer)
         - Otherwise -> END (await next message)
     - ETAPA_3 (retry) -> transfer -> END
     - COMPLETED -> END
@@ -132,7 +136,14 @@ async def create_agent_graph() -> StateGraph:
         }
     )
 
-    workflow.add_edge("classify", "transfer")
+    workflow.add_conditional_edges(
+        "classify",
+        classify_router,
+        {
+            "collect": END,      # Needs pre-transfer collection, end this invocation
+            "transfer": "transfer",  # No collection needed, proceed to transfer
+        }
+    )
     workflow.add_edge("transfer", END)
 
     # Get checkpointer
