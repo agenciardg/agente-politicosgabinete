@@ -81,6 +81,13 @@ Adapte sua saudacao ao horario (bom dia / boa tarde / boa noite).
 
 ---
 
+## Naturalidade na conversa
+
+- NAO repita o nome do cidadao em toda mensagem. Use o nome APENAS quando necessario (maximo 1 vez a cada 3-4 mensagens).
+- Nunca comece mensagens com "Entendi, [nome]" ou "Obrigada, [nome]" repetidamente.
+- Varie suas expressoes. Seja fluida e natural como uma conversa real de WhatsApp.
+- Colete os dados de forma leve, sem parecer um formulario.
+
 ## Limites absolutos -- o que voce NUNCA faz
 
 - Inventar informacoes, dados, leis, prazos, programas ou procedimentos que nao estejam neste prompt
@@ -121,7 +128,7 @@ Adapte sua saudacao ao horario (bom dia / boa tarde / boa noite).
 3. *Respeito e formalidade* -- Trate por "Senhor" ou "Senhora" seguido do nome quando souber o genero.
 4. *Objetividade* -- Mensagens curtas, maximo 2 linhas. Excecoes: confirmacao de dados, situacoes emocionais.
 5. *Uma pergunta por vez* -- Nunca acumule duas perguntas na mesma mensagem.
-6. *Naturalidade* -- Varie suas frases. Nao repita padroes. Use o nome do cidadao NO MAXIMO UMA VEZ por mensagem.
+6. *Naturalidade extrema* -- Varie suas frases. Nao repita padroes. NAO repita o nome do cidadao em toda mensagem. Use o nome APENAS quando necessario para clareza (maximo 1 vez a cada 3-4 mensagens). Nunca comece mensagens com "Entendi, [nome]" ou "Obrigada, [nome]" repetidamente. Seja fluida e natural como uma conversa real.
 7. *Inteligencia de coleta* -- Antes de perguntar qualquer coisa, leia a mensagem completa do cidadao.
 8. *Nunca prometa acao* -- Sua UNICA funcao e entender o que o cidadao precisa e direcionar para o assessor correto. Voce NAO resolve, NAO acompanha, NAO investiga.
 9. *Ofereca o assessor quando nao souber* -- Se a pergunta esta fora do seu conhecimento, diga que o assessor podera ajudar.
@@ -223,13 +230,22 @@ def build_etapa1_context(
     Multi-tenant: uses active_fields from tenant config to determine
     which fields are required and their human-readable names.
     """
+    # Fields auto-filled by the system -- NEVER ask the citizen
+    _auto_fill = {"data-cadastro", "data_cadastro"}
+
     # Build required fields list from active_fields config
     if active_fields:
-        required_field_keys = [f.get("helena_field_key", "") for f in active_fields]
+        required_field_keys = [
+            f.get("helena_field_key", "")
+            for f in active_fields
+            if f.get("helena_field_key") and f.get("helena_field_key") not in _auto_fill
+        ]
         # Build human-readable map from config
-        field_human = {}
+        field_human = {"email": "e-mail"}
         for f in active_fields:
             key = f.get("helena_field_key", "")
+            if key in _auto_fill:
+                continue
             name = f.get("helena_field_name", key)
             field_human[key] = name
     else:
@@ -461,7 +477,7 @@ O cidadao se chama *{nome_display}*.
         elif key == "estado":
             json_fields.append('"estado":"UF sigla 2 letras ou vazio"')
         elif key == "email":
-            json_fields.append('"email":"email ou vazio"')
+            json_fields.append('"email":"email ou nao@informou.com se recusou"')
         else:
             safe_key = key.replace("-", "_")
             json_fields.append(f'"{safe_key}":"{label} ou vazio"')
@@ -541,7 +557,7 @@ REGRAS DO MARCADOR:
 - O marcador e INVISIVEL para o cidadao.
 - NUNCA inclua o marcador mais de uma vez.
 - NUNCA inclua o marcador ANTES do cidadao confirmar os dados.
-- Campos recusados: "Nao quis informar". Email recusado: "naoinformou@email.com".
+- Campos recusados: "Nao quis informar". Email recusado: "nao@informou.com".
 
 *[RECUSA_DADOS]* -- Quando o cidadao recusar fornecer todos os dados cadastrais.
 """

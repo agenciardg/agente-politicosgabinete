@@ -224,10 +224,14 @@ class HelenaSyncService:
 
         return count
 
+    # Fields auto-filled by the system -- skip during sync (don't show in admin)
+    AUTO_FILL_FIELD_KEYS = {"data-cadastro", "data_cadastro"}
+
     async def sync_contact_fields(self, tenant_id: str, client: HelenaClient) -> int:
         """Sync contact custom fields from Helena CRM.
 
         Deletes fields that no longer exist in Helena (and their agent configs).
+        Skips auto-fill fields (e.g. data-cadastro) managed by the system.
         """
         fields = await client.get_contact_custom_fields()
         if not fields:
@@ -241,6 +245,10 @@ class HelenaSyncService:
         for field in fields:
             field_key = str(field.get("key") or field.get("name") or "")
             if not field_key:
+                continue
+
+            # Skip auto-fill fields
+            if field_key in self.AUTO_FILL_FIELD_KEYS:
                 continue
 
             synced_keys.append(field_key)
@@ -257,14 +265,32 @@ class HelenaSyncService:
                 on_conflict="tenant_id,helena_field_key"
             ).execute()
 
-        # DELETE fields that no longer exist in Helena
+        # Always include "email" as a standard Helena field (not customField)
+        synced_keys.append("email")
+        email_data = {
+            "tenant_id": tenant_id,
+            "helena_field_key": "email",
+            "helena_field_name": "E-mail",
+            "sync_status": "synced",
+            "synced_at": now,
+        }
+        supabase.table(CONTACT_FIELDS_TABLE).upsert(
+            email_data,
+            on_conflict="tenant_id,helena_field_key"
+        ).execute()
+
+        # DELETE fields that no longer exist in Helena OR are auto-fill fields
         if synced_keys:
             existing = supabase.table(CONTACT_FIELDS_TABLE).select(
                 "id,helena_field_key"
             ).eq("tenant_id", tenant_id).execute()
 
             for row in existing.data:
-                if row["helena_field_key"] not in synced_keys:
+                should_delete = (
+                    row["helena_field_key"] not in synced_keys
+                    or row["helena_field_key"] in self.AUTO_FILL_FIELD_KEYS
+                )
+                if should_delete:
                     orphan_id = str(row["id"])
                     # First delete agent field configs referencing this field
                     supabase.table(
@@ -275,7 +301,7 @@ class HelenaSyncService:
                         "id", orphan_id
                     ).execute()
                     logger.info(
-                        "Deleted orphaned contact field %s (key=%s) for tenant %s",
+                        "Deleted orphaned/auto-fill contact field %s (key=%s) for tenant %s",
                         orphan_id, row["helena_field_key"], tenant_id,
                     )
 

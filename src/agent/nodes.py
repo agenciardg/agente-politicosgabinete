@@ -112,11 +112,23 @@ def _get_tenant_llm(state: AgentState):
     )
 
 
+
+# Fields that are auto-filled by the system and must NEVER be asked to the citizen
+AUTO_FILL_FIELDS = {"data-cadastro", "data_cadastro"}
+
+
 def _get_required_field_keys(state: AgentState) -> list:
-    """Get list of required field keys from tenant config."""
+    """Get list of required field keys from tenant config.
+
+    Excludes auto-fill fields (e.g. data-cadastro) that are set by the system.
+    """
     active_fields = state.get("active_fields") or []
     if active_fields:
-        return [f.get("helena_field_key", "") for f in active_fields if f.get("helena_field_key")]
+        return [
+            f.get("helena_field_key", "")
+            for f in active_fields
+            if f.get("helena_field_key") and f.get("helena_field_key") not in AUTO_FILL_FIELDS
+        ]
 
     # Default fields
     return [
@@ -338,7 +350,20 @@ async def _save_contact_to_helena(
         update_data: Dict[str, Any] = {}
         if collected_data.get("name"):
             update_data["name"] = collected_data["name"]
-        if collected_data.get("email"):
+
+        # Handle email: only if email is in the active fields for this agent
+        required_keys = _get_required_field_keys(state)
+        if "email" in required_keys:
+            email_value = collected_data.get("email", "")
+            if email_value and str(email_value).strip().lower() not in (
+                "", "vazio", "não quis informar", "nao quis informar",
+                "naoinformou@email.com", "nao@informou.com",
+            ):
+                update_data["email"] = email_value
+            else:
+                # Fallback email when citizen refuses or doesn't provide
+                update_data["email"] = "nao@informou.com"
+        elif collected_data.get("email"):
             update_data["email"] = collected_data["email"]
         if custom_fields:
             update_data["customFields"] = custom_fields
