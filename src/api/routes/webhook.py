@@ -134,7 +134,7 @@ async def process_whatsapp_message(
 
             checkpoint_ns = f"tenant_{tenant_slug}"
 
-            # 2. Check for initial message (new conversation without history)
+            # 2. Check for initial message (new conversation + all data complete)
             initial_message = agent_config.get("initial_message", "").strip()
             if initial_message:
                 has_history = await has_existing_checkpoint(
@@ -142,15 +142,11 @@ async def process_whatsapp_message(
                     checkpoint_ns=checkpoint_ns,
                 )
                 if not has_history:
-                    logger.info(
-                        f"New conversation for tenant={tenant_slug}, "
-                        f"sending initial message"
-                    )
-                    # Send fixed initial message directly via Helena
-                    already_sent = False
-                    helena_token = tenant_config.get("helena_api_token", "")
-                    if helena_token:
-                        try:
+                    # Check if contact has all required fields filled
+                    contact_data_complete = False
+                    try:
+                        helena_token = tenant_config.get("helena_api_token", "")
+                        if helena_token:
                             helena_client = HelenaClient(
                                 api_token=helena_token,
                                 base_url=tenant_config.get(
@@ -158,43 +154,115 @@ async def process_whatsapp_message(
                                 ),
                             )
                             try:
-                                await helena_client.send_message(
-                                    session_id=session_id,
-                                    message=initial_message,
-                                    to=request.numero,
+                                contact = await helena_client.get_contact_by_phone(
+                                    request.numero
                                 )
-                                already_sent = True
+                                # Check required fields from active_fields config
+                                if active_fields:
+                                    required_keys = [
+                                        f.get("helena_field_key", "")
+                                        for f in active_fields
+                                        if f.get("helena_field_key")
+                                    ]
+                                else:
+                                    required_keys = [
+                                        "email", "data-nascimento", "endereco",
+                                        "bairro", "cep", "cidade", "estado", "cpf",
+                                    ]
+
+                                cf = contact.get("customFields") or {}
+                                missing = []
+                                for field in required_keys:
+                                    if field == "email":
+                                        value = contact.get("email")
+                                    else:
+                                        value = cf.get(field) or cf.get(
+                                            "endere-o" if field == "endereco" else field
+                                        )
+                                    is_empty = not value or (
+                                        isinstance(value, str)
+                                        and value.strip().lower()
+                                        in ("", "-", "n/a", "vazio", "não informado",
+                                            "nao informado")
+                                    )
+                                    if is_empty:
+                                        missing.append(field)
+
+                                contact_data_complete = len(missing) == 0
                                 logger.info(
-                                    f"Initial message sent to Helena for "
-                                    f"session {session_id}"
+                                    f"Initial message check: phone={request.numero}, "
+                                    f"missing_fields={missing}, complete={contact_data_complete}"
                                 )
                             finally:
                                 await helena_client.close()
-                        except Exception as e:
-                            logger.error(
-                                f"Error sending initial message: {e}",
-                                exc_info=True,
-                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Error checking contact data for initial message: {e}"
+                        )
+                        contact_data_complete = False
 
-                    _recent_messages[dedup_key] = time.time()
+                    if contact_data_complete:
+                        # All data filled + no history -> send fixed initial message
+                        logger.info(
+                            f"New conversation with complete data for "
+                            f"tenant={tenant_slug}, sending initial message"
+                        )
+                        already_sent = False
+                        helena_token = tenant_config.get("helena_api_token", "")
+                        if helena_token:
+                            try:
+                                helena_client = HelenaClient(
+                                    api_token=helena_token,
+                                    base_url=tenant_config.get(
+                                        "helena_base_url", "https://api.helena.run"
+                                    ),
+                                )
+                                try:
+                                    await helena_client.send_message(
+                                        session_id=session_id,
+                                        message=initial_message,
+                                        to=request.numero,
+                                    )
+                                    already_sent = True
+                                    logger.info(
+                                        f"Initial message sent to Helena for "
+                                        f"session {session_id}"
+                                    )
+                                finally:
+                                    await helena_client.close()
+                            except Exception as e:
+                                logger.error(
+                                    f"Error sending initial message: {e}",
+                                    exc_info=True,
+                                )
 
-                    return WebhookResponse(
-                        success=True,
-                        message=initial_message,
-                        session_id=session_id,
-                        current_phase="INITIAL",
-                        data_collected=False,
-                        category=None,
-                        transferred=False,
-                        already_sent=already_sent,
-                        error=None,
-                        metadata={
-                            "tenant_slug": tenant_slug,
-                            "tenant_id": tenant_id,
-                            "agent_type": agent_type,
-                            "initial_message": True,
-                        },
-                    )
+                        _recent_messages[dedup_key] = time.time()
+
+                        return WebhookResponse(
+                            success=True,
+                            message=initial_message,
+                            session_id=session_id,
+                            current_phase="INITIAL",
+                            data_collected=True,
+                            category=None,
+                            transferred=False,
+                            already_sent=already_sent,
+                            error=None,
+                            metadata={
+                                "tenant_slug": tenant_slug,
+                                "tenant_id": tenant_id,
+                                "agent_type": agent_type,
+                                "initial_message": True,
+                            },
+                        )
+                    else:
+                        # Data incomplete + no history -> let LLM handle
+                        # (agent will present itself and ask for missing data)
+                        logger.info(
+                            f"New conversation with incomplete data for "
+                            f"tenant={tenant_slug}, skipping initial message "
+                            f"- LLM will collect missing fields"
+                        )
 
             # 3. Get agent graph (singleton, tenant-agnostic structure)
             graph = await get_agent_graph()
