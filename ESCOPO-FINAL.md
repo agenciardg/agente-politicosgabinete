@@ -1,8 +1,8 @@
 # ESCOPO FINAL — Sistema Multi-Tenant de Agentes de Gabinete
 
-**Versao:** 1.0 FINAL
-**Data:** 2026-03-14
-**Status:** Aprovado para construcao
+**Versao:** 1.1
+**Data:** 2026-03-15
+**Status:** Em construcao — ETAPA 2.5, fill_type, naturalidade, auto-fill implementados
 
 ---
 
@@ -140,12 +140,29 @@ A memoria da conversa (checkpoints, writes do LangGraph) e limpa em DOIS momento
 ```
 1. Busca contato: GET /core/v1/contact/phonenumber/{phone}
 2. Carrega campos ativos do banco (Supabase)
-3. Compara com dados do contato → identifica vazios
-4. Se todos preenchidos → ETAPA 2
-5. Se faltam → coleta UM POR VEZ, pausadamente
-6. Ao final → confirma com cidadao
-7. Salva: PUT /core/v1/contact/phonenumber/{phone}
+3. Filtra campos auto-fill (data-cadastro) — nunca pergunta ao cidadao
+4. Compara com dados do contato → identifica vazios
+5. Se todos preenchidos → ETAPA 2
+6. Se faltam → coleta UM POR VEZ, pausadamente
+7. Ao final → confirma com cidadao
+8. Salva: PUT /core/v1/contact/phonenumber/{phone}
 ```
+
+#### Campos com auto-fill (NAO pergunta ao cidadao):
+
+| Campo | Valor automatico |
+|-------|-----------------|
+| `data-cadastro` / `data_cadastro` | Data/hora atual no formato DD/MM/YYYY (tz America/Sao_Paulo) |
+
+Esses campos sao filtrados do sync (nao aparecem no admin), filtrados do prompt
+(agente nao pergunta), e preenchidos automaticamente ao salvar o contato.
+
+#### Email como campo toggleavel:
+
+- O campo `email` aparece no admin durante sync como campo padrao do Helena
+- O admin pode ativar/desativar como qualquer outro campo de coleta
+- Se ativado e o cidadao se recusar a informar: salva como `nao@informou.com`
+- Se desativado: agente nao pergunta email
 
 ### 4.2 ETAPA 2 — Classificacao da Demanda
 
@@ -154,7 +171,43 @@ A memoria da conversa (checkpoints, writes do LangGraph) e limpa em DOIS momento
 2. Monta prompt dinamico com categorias
 3. Conversa ate entender a demanda
 4. Classifica: { painel, descricao, resumo, urgencia }
+5. Verifica se o painel tem campos fill_type="collect" ou pre_transfer_requirements
+   - Se SIM → vai para ETAPA 2.5
+   - Se NAO → vai direto para ETAPA 3
 ```
+
+### 4.2.5 ETAPA 2.5 — Coleta Pre-Transferencia (NOVO)
+
+Fase intermediaria entre classificacao e transferencia. So e ativada quando o painel
+destino tem campos com `fill_type="collect"` ou `pre_transfer_requirements` preenchido.
+
+```
+1. Carrega do banco:
+   - Campos do card com fill_type="collect" (ex: documento, comprovante)
+   - pre_transfer_requirements do painel (texto livre com instrucoes)
+
+2. Agente coleta as informacoes do cidadao:
+   - Pergunta cada campo com fill_type="collect", um por vez
+   - Segue as instrucoes de pre_transfer_requirements (se houver)
+   - Dados coletados ficam em state.pre_transfer_data
+
+3. Ao concluir a coleta:
+   - Marca state.pre_transfer_collected = True
+   - Emite marcador [COLETA_PRE_TRANSFER] com JSON dos dados
+   - Avanca para ETAPA 3
+
+Exemplo de pre_transfer_requirements:
+  "Solicitar foto do documento de identidade e comprovante de residencia
+   antes de criar o card neste painel."
+```
+
+#### fill_type — Tipos de preenchimento dos campos do card
+
+| fill_type | Descricao | Quando preenche |
+|-----------|-----------|-----------------|
+| `auto` | Sistema preenche automaticamente (ex: data/hora, dados da classificacao) | ETAPA 3 (na criacao do card) |
+| `contact` | Puxa do cadastro do contato Helena (ex: nome, cidade, CPF) | ETAPA 3 (na criacao do card) |
+| `collect` | Agente pergunta ao cidadao antes de criar o card | ETAPA 2.5 (antes da transferencia) |
 
 ### 4.3 ETAPA 3 — Transferencia + Criacao do Card
 
@@ -206,7 +259,15 @@ NOTA: A transferencia NAO conclui o atendimento no CRM.
 
 #### Campos customizados do card (admin configura o mapeamento):
 
-Cada campo do card do painel tem uma instrucao do admin dizendo "o que armazenar". O agente preenche de acordo.
+Cada campo do card do painel tem um `fill_type` e uma instrucao:
+
+| fill_type | Comportamento |
+|-----------|---------------|
+| `auto` | Sistema preenche automaticamente com base na classificacao/dados do sistema |
+| `contact` | Puxa direto do cadastro do contato Helena (nome, cidade, CPF, etc) |
+| `collect` | Agente pergunta ao cidadao na ETAPA 2.5 antes de criar o card |
+
+O admin configura no painel qual tipo de preenchimento usar para cada campo.
 
 ---
 
@@ -334,6 +395,7 @@ CREATE INDEX idx_ap_attendance_event_type ON agentpolitico_tenant_attendance_eve
 | `conversation_started` | Primeira mensagem do dia de um numero | {} |
 | `data_collection_complete` | ETAPA 1 concluida | { fields_collected: 5 } |
 | `classification_complete` | ETAPA 2 concluida | { panel: "Saude", urgency: "alta" } |
+| `pre_transfer_collection_complete` | ETAPA 2.5 concluida | { panel: "Saude", fields_collected: ["doc_id", "comprovante"] } |
 | `transfer_complete` | ETAPA 3 concluida | { panel: "Saude", department: "Assessores Saude" } |
 | `card_created` | Card criado no painel | { card_id: "uuid", panel: "Saude" } |
 | `attendance_completed` | Atendimento concluido | { reason: "transferred" ou "follow_up_timeout" } |
@@ -498,6 +560,7 @@ CREATE TABLE agentpolitico_tenant_agent_panels (
     agent_id UUID REFERENCES agentpolitico_tenant_agents(id) ON DELETE CASCADE,
     tenant_panel_id UUID REFERENCES agentpolitico_tenant_panels(id) ON DELETE CASCADE,
     agent_description TEXT,
+    pre_transfer_requirements TEXT,           -- (NOVO) instrucoes de coleta pre-transferencia
     helena_step_id UUID,
     helena_department_id UUID,
     active BOOLEAN DEFAULT false,
@@ -566,6 +629,7 @@ CREATE TABLE agentpolitico_tenant_agent_panel_field_mappings (
     agent_panel_id UUID REFERENCES agentpolitico_tenant_agent_panels(id) ON DELETE CASCADE,
     panel_custom_field_id UUID REFERENCES agentpolitico_tenant_panel_custom_fields(id) ON DELETE CASCADE,
     storage_instruction TEXT,
+    fill_type TEXT DEFAULT 'auto',             -- (NOVO) 'auto', 'contact' ou 'collect'
     active BOOLEAN DEFAULT true,
     UNIQUE(agent_panel_id, panel_custom_field_id)
 );
@@ -699,7 +763,7 @@ CREATE INDEX idx_ap_followup_cancel ON agentpolitico_follow_up_queue(tenant_id, 
 - Prompt de comportamento (editavel)
 - Campos de coleta (sincronizados, ativar/desativar, instrucao)
 - Paineis ativos (ativar/desativar, equipe destino)
-- Ao clicar painel: descricao + mapeamento de campos do card
+- Ao clicar painel: descricao + requisitos pre-transferencia (textarea) + mapeamento de campos do card (com seletor fill_type: auto/contact/collect)
 
 **Aba Agente Assessor:**
 - Toggle ativo/inativo
@@ -759,6 +823,7 @@ Opcao ao criar tenant:
 | Camada | Tecnologia |
 |--------|-----------|
 | Backend API | FastAPI (Python) |
+| Naturalidade | Regras anti-repeticao de nome (max 1x a cada 3-4 msgs) |
 | Agente IA | LangGraph |
 | LLM | Grok (xAI) padrao, configuravel por tenant |
 | Config DB | Supabase RDG (PostgreSQL gerenciado) |
@@ -999,4 +1064,58 @@ FASE 5: QUALIDADE (sequencial)
 
 ---
 
-*Documento final aprovado para construcao. Todas as decisoes, fluxos, tabelas, endpoints e agentes de construcao estao definidos.*
+*Documento aprovado para construcao. Todas as decisoes, fluxos, tabelas, endpoints e agentes de construcao estao definidos.*
+
+---
+
+## Changelog
+
+### v1.1 (2026-03-15)
+
+**Novas funcionalidades implementadas:**
+
+1. **ETAPA 2.5 — Coleta Pre-Transferencia**
+   - Nova fase entre classificacao (ETAPA 2) e transferencia (ETAPA 3)
+   - Ativada quando painel tem campos `fill_type="collect"` ou `pre_transfer_requirements`
+   - Agente coleta informacoes especificas antes de criar o card
+   - Roteamento condicional no grafo LangGraph (classify_router)
+
+2. **fill_type nos mapeamentos de campo do card**
+   - `auto`: sistema preenche automaticamente
+   - `contact`: puxa do cadastro do contato Helena
+   - `collect`: agente pergunta ao cidadao na ETAPA 2.5
+   - Nova coluna na tabela `agentpolitico_tenant_agent_panel_field_mappings`
+   - Seletor no admin panel (Automatico / Do contato / Solicitar)
+
+3. **pre_transfer_requirements nos paineis**
+   - Campo textarea opcional por painel
+   - Instrucoes em texto livre do que o agente deve coletar/verificar antes de transferir
+   - Nova coluna na tabela `agentpolitico_tenant_agent_panels`
+
+4. **Naturalidade do agente**
+   - Regra no prompt para nao repetir nome do cidadao toda mensagem
+   - Maximo 1 vez a cada 3-4 mensagens
+   - Aplicada tanto em prompts customizados quanto no prompt padrao
+
+5. **data_cadastro auto-fill**
+   - Campo preenchido automaticamente com data/hora atual (DD/MM/YYYY, tz America/Sao_Paulo)
+   - Filtrado do sync (nao aparece no admin)
+   - Filtrado do prompt (agente nao pergunta)
+
+6. **Email como campo toggleavel**
+   - Aparece no admin durante sync como campo padrao Helena
+   - Admin ativa/desativa como qualquer campo
+   - Se cidadao recusar: salva como `nao@informou.com`
+
+**Arquivos modificados:**
+- `src/agent/state.py` — ETAPA_2_5, pre_transfer_data, pre_transfer_collected
+- `src/agent/graph.py` — roteamento condicional apos classify
+- `src/agent/nodes.py` — classify_router, logica ETAPA 2.5, auto-fill, email fallback
+- `src/agent/prompts.py` — build_etapa25_context, naturalidade, filtro data_cadastro
+- `src/agent/config_loader.py` — pre_transfer_requirements no carregamento
+- `src/models/panel.py` — pre_transfer_requirements, fill_type nos models
+- `src/services/panel_service.py` — fill_type no upsert
+- `src/services/sync_service.py` — filtro data_cadastro, email padrao
+- `src/api/routes/panels.py` — fill_type na rota
+- `admin/src/types/index.ts` — tipos atualizados
+- `admin/src/components/agent-config.tsx` — textarea + select fill_type
