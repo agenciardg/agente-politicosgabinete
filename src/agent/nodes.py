@@ -485,8 +485,37 @@ async def agent_node(state: AgentState) -> Dict[str, Any]:
 
     updates: Dict[str, Any] = {"demand_ready": False}
 
+    # ---- Load long-term memory for context ----
+    memory_context = ""
+    try:
+        from src.services.memory_service import MemoryService
+
+        memory_svc = MemoryService()
+        citizen_memory = await memory_svc.get_citizen_memory(
+            tenant_id=state.get("tenant_id", ""),
+            phone_number=state.get("phone_number", ""),
+        )
+        if citizen_memory:
+            total = citizen_memory.get("total_contacts", 0)
+            last_cat = citizen_memory.get("last_category", "")
+            last_content = citizen_memory.get("content", "")
+            last_date = citizen_memory.get("updated_at", "")
+            memory_context = (
+                f"## HISTORICO DO CIDADAO\n\n"
+                f"Este cidadao ja entrou em contato {total} vez(es) anteriormente.\n"
+                f"Ultimo atendimento: {last_content}\n"
+                f"Categoria: {last_cat}\n"
+                f"Data: {last_date}\n\n"
+                f"Use essa informacao para personalizar o atendimento. "
+                f"Mencione brevemente que ja conversaram antes, se apropriado."
+            )
+    except Exception as e:
+        logger.warning(f"Error loading citizen memory: {e}")
+
     # ---- Build dynamic context based on phase ----
     context_parts = []
+    if memory_context:
+        context_parts.append(memory_context)
     current_phase = state.get("current_phase", "ETAPA_1")
 
     if current_phase == "ETAPA_1" and not state.get("data_collected"):
@@ -1020,6 +1049,24 @@ async def transfer_node(state: AgentState) -> Dict[str, Any]:
             )
 
         updates["messages"] = [AIMessage(content=transfer_confirmation)]
+
+        # Save interaction to long-term memory before cleaning checkpoints
+        try:
+            from src.services.memory_service import MemoryService
+
+            memory_svc = MemoryService()
+            await memory_svc.save_interaction_memory(
+                tenant_id=state.get("tenant_id", ""),
+                phone_number=state.get("phone_number", ""),
+                contact_name=contact_name,
+                session_id=state.get("session_id", ""),
+                classification=classification,
+                agent_type=state.get("agent_type", "principal"),
+                transferred_to_department=updates.get("transferred_to_department", ""),
+                new_card_id=updates.get("new_card_id", ""),
+            )
+        except Exception as e:
+            logger.error(f"Error saving interaction memory: {e}", exc_info=True)
 
         # Clean up checkpoints for this session
         try:
