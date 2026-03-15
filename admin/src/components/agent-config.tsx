@@ -229,7 +229,7 @@ export function AgentConfig({ agentType, tenantId }: AgentConfigProps) {
         step_id: ap.step_id || undefined,
         department_id: ap.department_id || undefined,
       })
-      setAgentPanels((prev) => prev.map((p) => (p.id === ap.id ? updated : p)))
+      setAgentPanels((prev) => prev.map((p) => (p.id === ap.id ? { ...updated, field_mappings: p.field_mappings } : p)))
       toast.success('Painel salvo com sucesso!')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar painel')
