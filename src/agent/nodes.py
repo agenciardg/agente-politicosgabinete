@@ -208,6 +208,97 @@ async def _lookup_cep(cep: str) -> dict:
         return {"found": False, "error": str(e)}
 
 
+def _build_dynamic_field_map(state: AgentState) -> Dict[str, str]:
+    """Build field map (json_key -> helena_key) dynamically from active_fields.
+
+    The prompt generates JSON keys by replacing hyphens with underscores
+    (e.g., "data-nascimento" -> "data_nascimento"). This function mirrors
+    that logic so the save correctly maps back to Helena field keys.
+
+    Also handles Helena's known alias quirks (e.g., "endere-o" for "endereco").
+    """
+    active_fields = state.get("active_fields") or []
+    if active_fields:
+        field_map: Dict[str, str] = {}
+        for f in active_fields:
+            helena_key = f.get("helena_field_key", "")
+            if not helena_key or helena_key == "email":
+                continue
+            # Mirror prompt logic: key.replace("-", "_")
+            json_key = helena_key.replace("-", "_")
+            field_map[json_key] = helena_key
+        return field_map
+
+    # Fallback: default fields
+    return {
+        "cpf": "cpf",
+        "data_nascimento": "data-nascimento",
+        "cep": "cep",
+        "endereco": "endereco",
+        "bairro": "bairro",
+        "cidade": "cidade",
+        "estado": "estado",
+    }
+
+
+# Helena sometimes stores "endereco" as "endere-o" (accent encoding quirk).
+# When WRITING, we must use the key that already exists in the contact's
+# customFields so we UPDATE instead of creating a duplicate field.
+_HELENA_WRITE_ALIASES: Dict[str, list] = {
+    "endereco": ["endere-o", "endereço"],
+}
+
+
+def _resolve_helena_write_key(helena_key: str, existing_cf: dict) -> str:
+    """Return the actual Helena customField key to use for writing.
+
+    If the contact already has an alias key (e.g., "endere-o"), use that
+    instead of the canonical key so the value updates in place.
+    """
+    aliases = _HELENA_WRITE_ALIASES.get(helena_key)
+    if aliases:
+        for alias in aliases:
+            if alias in existing_cf:
+                return alias
+    return helena_key
+
+
+def _normalize_collected_keys(collected_data: dict) -> dict:
+    """Normalize LLM output keys to match expected field_map keys.
+
+    LLMs sometimes deviate from the template (e.g., "data de nascimento"
+    instead of "data_nascimento"). This normalizes common variations.
+    """
+    normalized = {}
+    key_aliases = {
+        "data_nascimento": ["data_de_nascimento", "datanascimento", "data nascimento"],
+        "endereco": ["endereço", "endere_o", "logradouro", "rua"],
+        "bairro": ["bairro"],
+        "cidade": ["cidade", "municipio", "município"],
+        "estado": ["estado", "uf"],
+        "cpf": ["cpf"],
+        "cep": ["cep"],
+        "cargo_no_ministerio": ["cargo_no_ministério", "cargo_ministerio"],
+        "ministerio_frequenta": ["ministério_frequenta"],
+        "data_cadastro": ["data_de_cadastro", "datacadastro"],
+    }
+
+    # Build reverse lookup: alias -> canonical_key
+    alias_to_canonical = {}
+    for canonical, aliases in key_aliases.items():
+        alias_to_canonical[canonical] = canonical
+        for alias in aliases:
+            alias_to_canonical[alias] = canonical
+
+    for key, value in collected_data.items():
+        # Normalize: lowercase, strip, replace spaces/hyphens with underscore
+        norm_key = key.strip().lower().replace("-", "_").replace(" ", "_")
+        canonical = alias_to_canonical.get(norm_key, norm_key)
+        normalized[canonical] = value
+
+    return normalized
+
+
 async def _save_contact_to_helena(
     state: AgentState,
     collected_data: dict,
@@ -217,28 +308,26 @@ async def _save_contact_to_helena(
     helena_client = _get_helena_client(state)
 
     try:
+        # Normalize LLM output keys
+        collected_data = _normalize_collected_keys(collected_data)
+
+        # Build field map dynamically from active_fields
+        field_map = _build_dynamic_field_map(state)
+
+        existing_cf = (state.get("contact_data") or {}).get("customFields", {})
         custom_fields = {}
-        field_map = {
-            "cpf": "cpf",
-            "data_nascimento": "data-nascimento",
-            "cep": "cep",
-            "endereco": "endereco",
-            "bairro": "bairro",
-            "cidade": "cidade",
-            "estado": "estado",
-        }
 
         for data_key, helena_key in field_map.items():
             value = collected_data.get(data_key)
-            if value:
-                custom_fields[helena_key] = value
+            if value and str(value).strip().lower() not in (
+                "", "vazio", "não quis informar", "nao quis informar",
+            ):
+                # Resolve actual Helena key (handles alias like endere-o)
+                actual_key = _resolve_helena_write_key(helena_key, existing_cf)
+                custom_fields[actual_key] = value
 
         # Add data-cadastro if not existing (NEVER overwrite)
-        existing_data_cadastro = (
-            (state.get("contact_data") or {})
-            .get("customFields", {})
-            .get("data-cadastro")
-        )
+        existing_data_cadastro = existing_cf.get("data-cadastro")
         if not existing_data_cadastro:
             tenant_config = state.get("tenant_config") or {}
             timezone = tenant_config.get("timezone", "America/Sao_Paulo")
@@ -254,12 +343,21 @@ async def _save_contact_to_helena(
         if custom_fields:
             update_data["customFields"] = custom_fields
 
+        logger.info(
+            "Saving to Helena for %s (tenant=%s): custom_fields_keys=%s, collected_keys=%s",
+            state.get("phone_number"), state.get("tenant_id"),
+            list(custom_fields.keys()), list(collected_data.keys()),
+        )
+
         await helena_client.update_contact(
             phone=state["phone_number"],
             data=update_data,
         )
 
-        logger.info(f"Contact updated in Helena for {state.get('phone_number')} (tenant={state.get('tenant_id')})")
+        logger.info(
+            "Contact updated in Helena for %s (tenant=%s)",
+            state.get("phone_number"), state.get("tenant_id"),
+        )
 
         # Update contact_data in state
         updated_contact = dict(state.get("contact_data") or {})
@@ -271,7 +369,8 @@ async def _save_contact_to_helena(
         for data_key, helena_key in field_map.items():
             value = collected_data.get(data_key)
             if value:
-                updated_cf[helena_key] = value
+                actual_key = _resolve_helena_write_key(helena_key, existing_cf)
+                updated_cf[actual_key] = value
         if "data-cadastro" in custom_fields:
             updated_cf["data-cadastro"] = custom_fields["data-cadastro"]
         updated_contact["customFields"] = updated_cf
