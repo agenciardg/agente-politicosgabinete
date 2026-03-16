@@ -192,11 +192,33 @@ def _extract_cep_from_text(text: str):
 
 
 async def _lookup_cep(cep: str) -> dict:
-    """Lookup address from CEP via ViaCEP API."""
+    """Lookup address from CEP with fallback chain: ViaCEP -> BrasilAPI -> Nominatim."""
     cep_clean = re.sub(r"[^0-9]", "", cep)
     if len(cep_clean) != 8:
         return {"found": False, "error": "CEP invalido (deve ter 8 digitos)"}
 
+    # Try ViaCEP first
+    result = await _lookup_cep_viacep(cep_clean)
+    if result.get("found"):
+        return result
+
+    # Fallback: BrasilAPI
+    logger.info(f"ViaCEP falhou para {cep_clean}, tentando BrasilAPI...")
+    result = await _lookup_cep_brasilapi(cep_clean)
+    if result.get("found"):
+        return result
+
+    # Fallback: Nominatim (OpenStreetMap)
+    logger.info(f"BrasilAPI falhou para {cep_clean}, tentando Nominatim...")
+    result = await _lookup_cep_nominatim(cep_clean)
+    if result.get("found"):
+        return result
+
+    return {"found": False, "error": "CEP nao encontrado em nenhuma fonte"}
+
+
+async def _lookup_cep_viacep(cep_clean: str) -> dict:
+    """Lookup via ViaCEP API."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             url = f"https://viacep.com.br/ws/{cep_clean}/json/"
@@ -204,8 +226,8 @@ async def _lookup_cep(cep: str) -> dict:
             response.raise_for_status()
             data = response.json()
 
-        if data.get("erro"):
-            return {"found": False, "error": "CEP nao encontrado"}
+        if data.get("erro") or not data.get("localidade"):
+            return {"found": False}
 
         return {
             "found": True,
@@ -217,8 +239,92 @@ async def _lookup_cep(cep: str) -> dict:
             "estado": data.get("uf", ""),
         }
     except Exception as e:
-        logger.error(f"Erro ao consultar CEP {cep_clean}: {e}")
-        return {"found": False, "error": str(e)}
+        logger.error(f"ViaCEP erro para {cep_clean}: {e}")
+        return {"found": False}
+
+
+async def _lookup_cep_brasilapi(cep_clean: str) -> dict:
+    """Lookup via BrasilAPI (fallback 1)."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            url = f"https://brasilapi.com.br/api/cep/v2/{cep_clean}"
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+        if not data.get("city"):
+            return {"found": False}
+
+        return {
+            "found": True,
+            "cep": cep_clean,
+            "endereco": data.get("street", ""),
+            "complemento": "",
+            "bairro": data.get("neighborhood", ""),
+            "cidade": data.get("city", ""),
+            "estado": data.get("state", ""),
+        }
+    except Exception as e:
+        logger.error(f"BrasilAPI erro para {cep_clean}: {e}")
+        return {"found": False}
+
+
+async def _lookup_cep_nominatim(cep_clean: str) -> dict:
+    """Lookup via Nominatim/OpenStreetMap (fallback 2)."""
+    try:
+        cep_fmt = f"{cep_clean[:5]}-{cep_clean[5:]}"
+        async with httpx.AsyncClient(timeout=10) as client:
+            url = "https://nominatim.openstreetmap.org/search"
+            params = {
+                "postalcode": cep_fmt,
+                "country": "Brazil",
+                "format": "json",
+                "addressdetails": 1,
+                "limit": 1,
+            }
+            headers = {"User-Agent": "AgentePolitico/1.0"}
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+        if not data:
+            return {"found": False}
+
+        addr = data[0].get("address", {})
+        cidade = addr.get("city") or addr.get("town") or addr.get("municipality", "")
+        bairro = addr.get("suburb") or addr.get("neighbourhood", "")
+        estado = addr.get("state", "")
+        endereco = addr.get("road", "")
+
+        # Map full state name to abbreviation
+        state_map = {
+            "São Paulo": "SP", "Rio de Janeiro": "RJ", "Minas Gerais": "MG",
+            "Bahia": "BA", "Paraná": "PR", "Rio Grande do Sul": "RS",
+            "Pernambuco": "PE", "Ceará": "CE", "Pará": "PA",
+            "Santa Catarina": "SC", "Maranhão": "MA", "Goiás": "GO",
+            "Amazonas": "AM", "Espírito Santo": "ES", "Paraíba": "PB",
+            "Mato Grosso": "MT", "Rio Grande do Norte": "RN",
+            "Alagoas": "AL", "Piauí": "PI", "Distrito Federal": "DF",
+            "Mato Grosso do Sul": "MS", "Sergipe": "SE", "Rondônia": "RO",
+            "Tocantins": "TO", "Acre": "AC", "Amapá": "AP", "Roraima": "RR",
+        }
+        estado_uf = state_map.get(estado, estado)
+
+        if not cidade:
+            return {"found": False}
+
+        return {
+            "found": True,
+            "cep": cep_clean,
+            "endereco": endereco,
+            "complemento": "",
+            "bairro": bairro,
+            "cidade": cidade,
+            "estado": estado_uf,
+        }
+    except Exception as e:
+        logger.error(f"Nominatim erro para {cep_clean}: {e}")
+        return {"found": False}
 
 
 def _build_dynamic_field_map(state: AgentState) -> Dict[str, str]:
