@@ -266,10 +266,20 @@ def build_etapa1_context(
         }
 
     # Classify what's missing
+    # Normalize Helena keys for address detection (e.g. "endere-o" -> "endereco")
+    def _normalize_key(k: str) -> str:
+        import unicodedata
+        # Remove accents, replace hyphens/special chars with nothing
+        nfkd = unicodedata.normalize("NFKD", k)
+        ascii_key = "".join(c for c in nfkd if not unicodedata.combining(c))
+        return ascii_key.lower().replace("-", "").replace("_", "").replace(" ", "")
+
     missing_set = set(missing_fields or [])
     address_keys = {"cep", "endereco", "bairro", "cidade", "estado"}
-    missing_has_address = bool(missing_set & address_keys)
-    non_address_missing = [k for k in required_field_keys if k in missing_set and k not in address_keys]
+    # A missing key is "address" if its normalized form matches address_keys
+    _is_address = lambda k: _normalize_key(k) in address_keys
+    missing_has_address = any(_is_address(k) for k in missing_set)
+    non_address_missing = [k for k in required_field_keys if k in missing_set and not _is_address(k)]
     all_fields_empty = len(missing_fields or []) >= len(required_field_keys)
 
     # Build field instructions map from active_fields config
