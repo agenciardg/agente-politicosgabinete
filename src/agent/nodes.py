@@ -667,10 +667,6 @@ async def validate_data_node(state: AgentState) -> Dict[str, Any]:
                         "", "-", "—", "n/a", "vazio", "nenhum", "não informado",
                         "não informou", "não possui", "nao informado", "nao informou",
                     )
-                    or value.strip().lower().replace(" ", "") in (
-                        "nao@informou.com", "naoinformou@email.com",
-                        "naoinformado@email.com", "nao@informado.com",
-                    )
                 ))
                 if is_empty:
                     missing_fields.append(field)
