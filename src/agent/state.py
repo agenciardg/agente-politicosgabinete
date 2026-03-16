@@ -100,6 +100,9 @@ class AgentState(TypedDict):
     cep_lookup_result: Optional[dict]
     """ViaCEP lookup result"""
 
+    cep_data_saved: Optional[bool]
+    """Flag: CEP address data already saved to Helena?"""
+
     pending_data: Optional[dict]
     """Data collected in conversation awaiting confirmation"""
 
@@ -230,6 +233,7 @@ def create_initial_state(
         missing_fields=None,
         contact_name=None,
         cep_lookup_result=None,
+        cep_data_saved=False,
         pending_data=None,
         awaiting_confirmation=False,
         data_saved=False,

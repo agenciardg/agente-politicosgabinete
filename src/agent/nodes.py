@@ -801,6 +801,26 @@ async def agent_node(state: AgentState) -> Dict[str, Any]:
                 missing = [f for f in missing if _norm(f) not in addr_keys]
                 logger.info(f"CEP already presented, filtered address fields. Remaining missing: {missing}")
 
+                # Auto-save CEP data to Helena contact
+                if not state.get("cep_data_saved"):
+                    cep_save_data = {
+                        "endereco": cep_result.get("endereco", ""),
+                        "bairro": cep_result.get("bairro", ""),
+                        "cidade": cep_result.get("cidade", ""),
+                        "estado": cep_result.get("estado", ""),
+                        "cep": cep_result.get("cep", ""),
+                    }
+                    # Remove empty values
+                    cep_save_data = {k: v for k, v in cep_save_data.items() if v}
+                    if cep_save_data:
+                        try:
+                            save_result = await _save_contact_to_helena(state, cep_save_data)
+                            updates.update(save_result)
+                            updates["cep_data_saved"] = True
+                            logger.info(f"CEP data auto-saved to Helena for {state.get('phone_number')}: {list(cep_save_data.keys())}")
+                        except Exception as e:
+                            logger.error(f"Error auto-saving CEP data: {e}", exc_info=True)
+
         if missing:
             etapa1_block = build_etapa1_context(
                 missing_fields=missing,
