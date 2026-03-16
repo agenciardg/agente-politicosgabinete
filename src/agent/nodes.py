@@ -346,6 +346,18 @@ def _build_dynamic_field_map(state: AgentState) -> Dict[str, str]:
             # Mirror prompt logic: key.replace("-", "_")
             json_key = helena_key.replace("-", "_")
             field_map[json_key] = helena_key
+
+            # Also map canonical aliases so CEP merge data (e.g. "endereco")
+            # can find its way to Helena keys like "endere-o"
+            canonical_aliases = {
+                "endere_o": "endereco",
+                "indica_o": "indicacao",
+                "convencao": "convencao",
+            }
+            canonical = canonical_aliases.get(json_key)
+            if canonical and canonical not in field_map:
+                field_map[canonical] = helena_key
+
         return field_map
 
     # Fallback: default fields
@@ -895,12 +907,14 @@ async def post_process_node(state: AgentState) -> Dict[str, Any]:
                         logger.info(f"Merged CEP field '{key}' = '{value}' into collected_data")
 
             # Decision: confirm or save directly?
+            # 1-2 fields: save directly without confirmation
+            # 3+ fields: ask for confirmation (handled by prompt)
             total_missing = len(state.get("missing_fields", []))
 
-            if total_missing <= 3:
+            if total_missing <= 2:
                 # Few fields -> save directly
                 logger.info(
-                    f"Auto-save: {total_missing} missing fields (<=3) "
+                    f"Auto-save: {total_missing} missing fields (<=2) "
                     f"for {state.get('phone_number')} - saving directly"
                 )
                 save_updates = await _save_contact_to_helena(state, collected_data)

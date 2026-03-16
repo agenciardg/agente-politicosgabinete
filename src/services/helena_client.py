@@ -5,6 +5,8 @@ Cliente HTTP assincrono para integracao com Helena CRM.
 Cada instancia recebe um api_token especifico do tenant.
 """
 
+import re
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -430,3 +432,60 @@ class HelenaClient:
         response = await self.client.post(endpoint, json=payload)
         response.raise_for_status()
         return response.json()
+
+    async def send_message_fragmented(
+        self, session_id: str, message: str, to: str = "", delay: float = 1.2
+    ) -> List[Dict[str, Any]]:
+        """
+        Envia mensagem fragmentada em partes separadas para parecer mais natural.
+
+        Regras:
+        - Se a mensagem contém lista de confirmacao de dados (formato com *Campo:*),
+          envia tudo junto numa mensagem so.
+        - Caso contrario, divide por paragrafos (\n\n) e envia cada parte separada.
+        - Paragrafos curtos consecutivos (< 80 chars) sao agrupados.
+        """
+        # Detectar se e confirmacao de dados (lista com *Campo:* ou negrito)
+        is_confirmation = bool(re.search(
+            r"\*[A-ZÀ-Ú][a-zà-ú]+.*:\*", message
+        )) and message.count("*") >= 4
+
+        if is_confirmation or len(message) <= 150:
+            # Confirmacao ou mensagem curta -> envia tudo junto
+            result = await self.send_message(session_id, message, to)
+            return [result]
+
+        # Dividir por paragrafos
+        paragraphs = [p.strip() for p in message.split("\n\n") if p.strip()]
+
+        if len(paragraphs) <= 1:
+            # Sem paragrafos para dividir -> envia tudo junto
+            result = await self.send_message(session_id, message, to)
+            return [result]
+
+        # Agrupar paragrafos curtos consecutivos
+        fragments: list[str] = []
+        current = ""
+        for p in paragraphs:
+            if current and len(current) + len(p) < 150:
+                current = current + "\n\n" + p
+            else:
+                if current:
+                    fragments.append(current)
+                current = p
+        if current:
+            fragments.append(current)
+
+        # Enviar cada fragmento com delay
+        results = []
+        for i, fragment in enumerate(fragments):
+            result = await self.send_message(session_id, fragment, to)
+            results.append(result)
+            if i < len(fragments) - 1:
+                await asyncio.sleep(delay)
+
+        logger.info(
+            "Fragmented message into %d parts for session %s",
+            len(fragments), session_id
+        )
+        return results

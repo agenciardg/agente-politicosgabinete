@@ -316,7 +316,7 @@ async def process_whatsapp_message(
                             base_url=helena_base_url,
                         )
                         try:
-                            await helena_client.send_message(
+                            await helena_client.send_message_fragmented(
                                 session_id=session_id,
                                 message=response_message,
                                 to=request.numero,
