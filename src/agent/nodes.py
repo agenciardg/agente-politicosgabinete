@@ -349,12 +349,23 @@ def _build_dynamic_field_map(state: AgentState) -> Dict[str, str]:
 
             # Also map canonical aliases so CEP merge data (e.g. "endereco")
             # can find its way to Helena keys like "endere-o"
+            # Helena appends numeric suffixes (e.g. "cep-34", "cpf-94")
+            # and encodes accents (e.g. "endere-o" for "endereço")
+            import re as _re
+            # Strip numeric suffix: "cep_34" -> "cep", "data_nascimento_68" -> "data_nascimento"
+            stripped = _re.sub(r"_\d+$", "", json_key)
+            if stripped != json_key and stripped not in field_map:
+                field_map[stripped] = helena_key
+
+            # Known accent-encoding aliases
             canonical_aliases = {
                 "endere_o": "endereco",
                 "indica_o": "indicacao",
-                "convencao": "convencao",
+                "conv_n_o": "convencao",
+                "minist_rio_frequenta": "ministerio_frequenta",
+                "cargo_no_minist_rio": "cargo_no_ministerio",
             }
-            canonical = canonical_aliases.get(json_key)
+            canonical = canonical_aliases.get(json_key) or canonical_aliases.get(stripped)
             if canonical and canonical not in field_map:
                 field_map[canonical] = helena_key
 
