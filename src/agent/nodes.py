@@ -779,6 +779,28 @@ async def agent_node(state: AgentState) -> Dict[str, Any]:
                 f"{state.get('phone_number')} - defaulting to all required fields"
             )
 
+        # When CEP was found AND already presented to citizen,
+        # remove address fields from missing (they'll be saved via collected_data merge)
+        cep_result = state.get("cep_lookup_result")
+        if cep_result and cep_result.get("found"):
+            # Check if CEP data was already presented (bot already sent a message with CEP info)
+            cep_already_presented = False
+            for msg in reversed(state.get("messages", [])):
+                if hasattr(msg, "type") and msg.type == "ai" and msg.content:
+                    if "CEP" in msg.content and ("correto" in msg.content.lower() or "encontrei" in msg.content.lower()):
+                        cep_already_presented = True
+                    break  # only check the last AI message
+
+            if cep_already_presented:
+                import unicodedata
+                def _norm(k: str) -> str:
+                    nfkd = unicodedata.normalize("NFKD", k)
+                    ascii_k = "".join(c for c in nfkd if not unicodedata.combining(c))
+                    return ascii_k.lower().replace("-", "").replace("_", "").replace(" ", "")
+                addr_keys = {"cep", "endereco", "bairro", "cidade", "estado"}
+                missing = [f for f in missing if _norm(f) not in addr_keys]
+                logger.info(f"CEP already presented, filtered address fields. Remaining missing: {missing}")
+
         if missing:
             etapa1_block = build_etapa1_context(
                 missing_fields=missing,
