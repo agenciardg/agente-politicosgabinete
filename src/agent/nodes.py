@@ -807,7 +807,10 @@ async def agent_node(state: AgentState) -> Dict[str, Any]:
                 def _norm(k: str) -> str:
                     nfkd = unicodedata.normalize("NFKD", k)
                     ascii_k = "".join(c for c in nfkd if not unicodedata.combining(c))
-                    return ascii_k.lower().replace("-", "").replace("_", "").replace(" ", "")
+                    clean = ascii_k.lower().replace("-", "").replace("_", "").replace(" ", "")
+                    # Strip trailing numeric suffixes (e.g. "cep34" -> "cep")
+                    clean = re.sub(r"\d+$", "", clean)
+                    return clean
                 addr_keys = {"cep", "endereco", "bairro", "cidade", "estado"}
                 missing = [f for f in missing if _norm(f) not in addr_keys]
                 logger.info(f"CEP already presented, filtered address fields. Remaining missing: {missing}")

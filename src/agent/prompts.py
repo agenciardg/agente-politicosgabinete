@@ -268,11 +268,14 @@ def build_etapa1_context(
     # Classify what's missing
     # Normalize Helena keys for address detection (e.g. "endere-o" -> "endereco")
     def _normalize_key(k: str) -> str:
-        import unicodedata
+        import unicodedata, re as _re
         # Remove accents, replace hyphens/special chars with nothing
         nfkd = unicodedata.normalize("NFKD", k)
         ascii_key = "".join(c for c in nfkd if not unicodedata.combining(c))
-        return ascii_key.lower().replace("-", "").replace("_", "").replace(" ", "")
+        clean = ascii_key.lower().replace("-", "").replace("_", "").replace(" ", "")
+        # Strip trailing numeric suffixes (e.g. "cep34" -> "cep", "cpf94" -> "cpf")
+        clean = _re.sub(r"\d+$", "", clean)
+        return clean
 
     missing_set = set(missing_fields or [])
     address_keys = {"cep", "endereco", "bairro", "cidade", "estado"}
