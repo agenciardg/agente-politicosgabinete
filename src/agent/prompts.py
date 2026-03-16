@@ -479,7 +479,7 @@ O cidadao se chama *{nome_display}*.
         elif key == "estado":
             json_fields.append('"estado":"UF sigla 2 letras ou vazio"')
         elif key == "email":
-            json_fields.append('"email":"email ou nao@informou.com se recusou"')
+            json_fields.append('"email":"email informado pelo cidadao"')
         else:
             safe_key = key.replace("-", "_")
             json_fields.append(f'"{safe_key}":"{label} ou vazio"')
@@ -504,10 +504,11 @@ Voce DEVE perguntar CADA campo faltante individualmente, um por vez, e AGUARDAR 
 
 PROIBIDO:
 - Pular campos que ainda nao foram perguntados
-- Colocar "Nao quis informar" em campos que NUNCA foram perguntados
+- Colocar "Nao quis informar" ou "nao@informou.com" em campos que NUNCA foram perguntados
 - Gerar o resumo antes de ter perguntado TODOS os campos faltantes
 - Perguntar dois ou mais campos na mesma mensagem
 - Salvar dados antes do cidadao confirmar o resumo final
+- Assumir que o cidadao nao quer informar um campo sem ter perguntado
 
 ---
 
@@ -576,7 +577,8 @@ REGRAS DO MARCADOR:
 - O marcador e INVISIVEL para o cidadao.
 - NUNCA inclua o marcador mais de uma vez.
 - NUNCA inclua o marcador ANTES do cidadao confirmar os dados.
-- Campos recusados: "Nao quis informar". Email recusado: "nao@informou.com".
+- Campos recusados: "Nao quis informar".
+- Email: voce DEVE perguntar o email ao cidadao. Se ele RECUSAR informar, use "nao@informou.com". NUNCA coloque "nao@informou.com" sem ter perguntado primeiro.
 
 *[RECUSA_DADOS]* -- Quando o cidadao recusar fornecer todos os dados cadastrais.
 """
