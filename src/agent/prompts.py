@@ -329,12 +329,14 @@ def build_etapa1_context(
     cep_found = cep_lookup_result and cep_lookup_result.get("found")
     if cep_found:
         cep_section = (
-            f"O sistema encontrou o endereco pelo CEP {cep_lookup_result['cep']}:\n"
-            f"  Endereco: {cep_lookup_result.get('endereco', '')}\n"
-            f"  Bairro: {cep_lookup_result.get('bairro', '')}\n"
-            f"  Cidade: {cep_lookup_result.get('cidade', '')}\n"
-            f"  Estado: {cep_lookup_result.get('estado', '')}\n\n"
-            "Apresente este endereco ao cidadao e pergunte se esta correto.\n"
+            f"O sistema encontrou o endereco pelo CEP {cep_lookup_result['cep']}.\n\n"
+            "Apresente ao cidadao em FORMATO DE LISTA, exatamente assim:\n\n"
+            f"Pelo CEP {cep_lookup_result['cep']}, encontrei:\n\n"
+            f"*Endereco:* {cep_lookup_result.get('endereco', '')}\n"
+            f"*Bairro:* {cep_lookup_result.get('bairro', '')}\n"
+            f"*Cidade:* {cep_lookup_result.get('cidade', '')}\n"
+            f"*Estado:* {cep_lookup_result.get('estado', '')}\n\n"
+            "Esta correto?\n\n"
             "Se confirmar, NAO pergunte endereco, bairro, cidade nem estado -- ja estao preenchidos.\n"
             "Se disser que esta ERRADO, peca os campos de endereco manualmente um por vez."
         )
@@ -512,7 +514,11 @@ PROIBIDO:
 ### Regra de CEP e endereco
 
 Quando o cidadao informar o CEP e o sistema encontrar o endereco:
-- Apresente endereco, bairro, cidade e estado encontrados
+- Apresente os dados encontrados em FORMATO DE LISTA usando *negrito* do WhatsApp:
+  *Endereco:* valor
+  *Bairro:* valor
+  *Cidade:* valor
+  *Estado:* valor
 - Pergunte se esta correto
 - Se CONFIRMAR: esses 4 campos estao preenchidos, PULE para o proximo campo
 - Se NEGAR: peca cada campo de endereco manualmente um por vez
@@ -539,10 +545,23 @@ Quando o cidadao recusar informar um campo, voce pode insistir ate {budget_remai
 
 ### Confirmacao e salvamento
 
-1. Apos coletar TODOS os campos, apresente um resumo organizado ao cidadao.
-2. Pergunte: "Esses dados estao corretos?"
-3. SOMENTE apos o cidadao confirmar, inclua o marcador [DADOS_CONFIRMADOS].
-4. Se o cidadao pedir correcao, ajuste e reapresente o resumo.
+1. Apos coletar TODOS os campos, apresente um resumo em FORMATO DE LISTA ao cidadao, usando *negrito* do WhatsApp para os nomes dos campos. Exemplo:
+
+Vou confirmar seus dados:
+
+*Nome:* Joao da Silva
+*CEP:* 01001-000
+*Endereco:* Praca da Se
+*Bairro:* Se
+*Cidade:* Sao Paulo
+*Estado:* SP
+*CPF:* 12345678901
+*Data de nascimento:* 15/03/1990
+
+Esta tudo correto?
+
+2. SOMENTE apos o cidadao confirmar, inclua o marcador [DADOS_CONFIRMADOS].
+3. Se o cidadao pedir correcao, ajuste e reapresente o resumo em lista.
 
 ---
 
