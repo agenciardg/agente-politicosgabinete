@@ -879,6 +879,21 @@ async def post_process_node(state: AgentState) -> Dict[str, Any]:
             if not _email or _email.strip().lower() in _refused_markers:
                 collected_data["email"] = "naoinformou@email.com"
 
+            # Merge CEP lookup data if available and not already in collected_data
+            cep_data = state.get("cep_lookup_result")
+            if cep_data and cep_data.get("found"):
+                cep_fields = {
+                    "endereco": cep_data.get("endereco", ""),
+                    "bairro": cep_data.get("bairro", ""),
+                    "cidade": cep_data.get("cidade", ""),
+                    "estado": cep_data.get("estado", ""),
+                    "cep": cep_data.get("cep", ""),
+                }
+                for key, value in cep_fields.items():
+                    if value and not collected_data.get(key):
+                        collected_data[key] = value
+                        logger.info(f"Merged CEP field '{key}' = '{value}' into collected_data")
+
             # Decision: confirm or save directly?
             total_missing = len(state.get("missing_fields", []))
 
