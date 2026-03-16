@@ -448,11 +448,24 @@ O cidadao se chama *{nome_display}*.
         steps.append(f"{step_num}. Colete um por vez: {fields_str}.")
         step_num += 1
 
-    steps.append(
-        f"{step_num}. Apresente um resumo organizado de TODOS os dados coletados para "
-        f"confirmacao do cidadao. SOMENTE apos o cidadao confirmar que esta correto, "
-        f"inclua o marcador [DADOS_CONFIRMADOS] com o JSON."
-    )
+    # Count how many fields are being collected NOW
+    # Address via CEP counts as 1 block
+    total_collecting = (1 if missing_has_address else 0) + len(non_address_missing)
+    if all_fields_empty:
+        total_collecting += 1  # name also being collected
+
+    if total_collecting >= 3:
+        steps.append(
+            f"{step_num}. Apresente um resumo APENAS dos dados coletados AGORA (NAO inclua dados que ja existiam no CRM) "
+            f"em formato de lista. Pergunte se esta correto. SOMENTE apos confirmacao, "
+            f"inclua o marcador [DADOS_CONFIRMADOS] com o JSON."
+        )
+    else:
+        steps.append(
+            f"{step_num}. Como sao poucos dados, NAO peca confirmacao. "
+            f"Apos coletar, inclua o marcador [DADOS_CONFIRMADOS] diretamente com o JSON "
+            f"e informe que os dados foram atualizados."
+        )
     steps_text = "\n".join(steps)
 
     # Insistence budget
@@ -546,23 +559,29 @@ Quando o cidadao recusar informar um campo, voce pode insistir ate {budget_remai
 
 ### Confirmacao e salvamento
 
-1. Apos coletar TODOS os campos, apresente um resumo em FORMATO DE LISTA ao cidadao, usando *negrito* do WhatsApp para os nomes dos campos. Exemplo:
+REGRA IMPORTANTE: O resumo deve conter APENAS os campos coletados AGORA nesta conversa.
+NAO inclua dados que ja existiam no CRM antes desta conversa.
 
-Vou confirmar seus dados:
+**Se coletou 3 ou mais campos:**
+1. Apresente um resumo em FORMATO DE LISTA usando *negrito* do WhatsApp, com APENAS os campos novos. Exemplo:
 
-*Nome:* Joao da Silva
+Vou confirmar os dados que coletamos:
+
 *CEP:* 01001-000
 *Endereco:* Praca da Se
 *Bairro:* Se
 *Cidade:* Sao Paulo
 *Estado:* SP
-*CPF:* 12345678901
-*Data de nascimento:* 15/03/1990
 
 Esta tudo correto?
 
 2. SOMENTE apos o cidadao confirmar, inclua o marcador [DADOS_CONFIRMADOS].
-3. Se o cidadao pedir correcao, ajuste e reapresente o resumo em lista.
+3. Se o cidadao pedir correcao, ajuste e reapresente.
+
+**Se coletou 1 ou 2 campos:**
+1. NAO peca confirmacao. Salve diretamente.
+2. Inclua o marcador [DADOS_CONFIRMADOS] logo apos coletar.
+3. Diga algo como "Anotado!" ou "Pronto, dados atualizados!" e siga para a proxima etapa.
 
 ---
 
